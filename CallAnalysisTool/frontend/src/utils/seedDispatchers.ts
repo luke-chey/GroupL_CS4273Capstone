@@ -54,5 +54,5 @@ export const seedDispatchers = () => {
       }
     ])
   );
-  console.log("Mock dispatcher seeded in localStorage ✅");
+  console.log("Mock dispatcher seeded in localStorage");
 };
