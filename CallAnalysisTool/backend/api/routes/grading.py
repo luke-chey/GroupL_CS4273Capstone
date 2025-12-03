@@ -48,14 +48,25 @@ def grade_transcript():
     Returns:
         JSON response with AI grading results
     """
+    import sys
+    print("=" * 60, flush=True)
+    print("POST /api/grade endpoint called", flush=True)
+    print(f"Content-Type: {request.content_type}", flush=True)
+    print(f"Request method: {request.method}", flush=True)
+    sys.stderr.write("POST /api/grade endpoint called\n")
+    sys.stderr.flush()
+    
     try:
         # Get JSON data from request
+        print("Checking if request is JSON...", flush=True)
         if not request.is_json:
             return jsonify({
                 'error': 'Content-Type must be application/json'
             }), 400
         
+        print("Getting JSON data from request...", flush=True)
         transcript_data = request.get_json()
+        print(f"Got transcript data with {len(transcript_data.get('segments', []))} segments", flush=True)
         
         # Validate required fields
         if 'segments' not in transcript_data:
@@ -67,7 +78,9 @@ def grade_transcript():
         show_evidence = request.args.get('show_evidence', 'false').lower() == 'true'
         
         # Initialize AI grader (questions now loaded dynamically based on nature codes)
+        print("Initializing AI grader...", flush=True)
         ai_grader = AIGraderService()
+        print("AI grader initialized, calling grade_transcript...", flush=True)
         
         # Grade the transcript using AI with nature code detection
         # Returns: (grades, primary_nature_code, all_questions)
@@ -75,6 +88,7 @@ def grade_transcript():
             transcript_data, 
             show_evidence=show_evidence
         )
+        print(f"Grade transcript completed. Got {len(grades)} grades.", flush=True)
         
         # Calculate percentage score
         percentage = ai_grader.calculate_percentage(grades, questions)
@@ -144,8 +158,21 @@ def grade_transcript():
             }), 500
     
     except Exception as e:
+        import traceback
+        import sys
+        from flask import current_app
+        error_traceback = traceback.format_exc()
+        # Use stderr to ensure output is flushed
+        sys.stderr.write(f"\n{'='*60}\n")
+        sys.stderr.write(f"ERROR in /api/grade: {str(e)}\n")
+        sys.stderr.write(f"Traceback:\n{error_traceback}\n")
+        sys.stderr.write(f"{'='*60}\n")
+        sys.stderr.flush()
+        # Also print for stdout
+        print(f"\n{'='*60}\nERROR in /api/grade: {str(e)}\nTraceback:\n{error_traceback}\n{'='*60}\n", flush=True)
         return jsonify({
-            'error': f'Grading failed: {str(e)}'
+            'error': f'Grading failed: {str(e)}',
+            'traceback': error_traceback if current_app.debug else None
         }), 500
 
 

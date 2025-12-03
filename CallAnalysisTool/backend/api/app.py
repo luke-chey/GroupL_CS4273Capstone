@@ -37,6 +37,23 @@ def create_app():
     app.register_blueprint(health_bp, url_prefix='/api')
     app.register_blueprint(grading_bp, url_prefix='/api')
     app.register_blueprint(transcription_bp, url_prefix='/api')
+    
+    # Add error handler to catch all unhandled errors
+    @app.errorhandler(Exception)
+    def handle_exception(e):
+        import traceback
+        import sys
+        error_traceback = traceback.format_exc()
+        sys.stderr.write(f"\n{'='*60}\n")
+        sys.stderr.write(f"UNHANDLED ERROR in Flask app: {str(e)}\n")
+        sys.stderr.write(f"Traceback:\n{error_traceback}\n")
+        sys.stderr.write(f"{'='*60}\n")
+        sys.stderr.flush()
+        print(f"\n{'='*60}\nUNHANDLED ERROR: {str(e)}\nTraceback:\n{error_traceback}\n{'='*60}\n", flush=True)
+        return jsonify({
+            'error': f'Internal server error: {str(e)}',
+            'traceback': error_traceback if app.debug else None
+        }), 500
 
     # In containerized environment, defer model initialization to avoid startup issues
     # Models will be initialized on first request if not already loaded
@@ -50,6 +67,25 @@ def create_app():
         except Exception as e:
             print(f"Warning: Model initialization failed at startup: {e}")
             print("Models will be initialized on first request.")
+    else:
+        # In Docker, wait a bit for Ollama to start, then check readiness
+        import time
+        import threading
+        def wait_for_ollama():
+            print("Waiting for Ollama to start...")
+            time.sleep(5)  # Give Ollama time to start
+            try:
+                from AIGrader import check_ollama_ready
+                if check_ollama_ready(max_retries=10, retry_delay=3):
+                    print("Ollama is ready!")
+                    initialize_ollama()
+                else:
+                    print("Warning: Ollama readiness check failed. Will retry on first request.")
+            except Exception as e:
+                print(f"Warning: Could not check Ollama readiness: {e}")
+        
+        # Start in background thread so Flask can start immediately
+        threading.Thread(target=wait_for_ollama, daemon=True).start()
     return app
 
 if __name__ == '__main__':

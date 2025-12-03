@@ -11,21 +11,75 @@ from sklearn.metrics.pairwise import cosine_similarity
 from datetime import datetime
 import argparse
 import os
+from pathlib import Path
+
+# Get the directory where this script is located
+SCRIPT_DIR = Path(__file__).parent
 
 # Step 0: Load the EMS protocol questions
-df = pd.read_csv("data/EMSQA.csv")  # This has all our protocol questions
+try:
+    emsqa_path = SCRIPT_DIR / "data" / "EMSQA.csv"
+    if not emsqa_path.exists():
+        # Fallback: try relative to current working directory
+        emsqa_path = Path("data/EMSQA.csv")
+    if not emsqa_path.exists():
+        raise FileNotFoundError(f"EMSQA.csv not found. Tried: {SCRIPT_DIR / 'data' / 'EMSQA.csv'} and data/EMSQA.csv")
+    df = pd.read_csv(emsqa_path)  # This has all our protocol questions
+    print(f"Loaded EMSQA.csv from: {emsqa_path}")
+except Exception as e:
+    print(f"ERROR loading EMSQA.csv: {e}")
+    raise
 
 # Step 1: Load NatureCode keywords
-with open("nature_keywords.json") as f:
-    NATURE_KEYWORDS = json.load(f)
+try:
+    nature_keywords_path = SCRIPT_DIR / "nature_keywords.json"
+    if not nature_keywords_path.exists():
+        # Fallback: try relative to current working directory
+        nature_keywords_path = Path("nature_keywords.json")
+    if not nature_keywords_path.exists():
+        raise FileNotFoundError(f"nature_keywords.json not found. Tried: {SCRIPT_DIR / 'nature_keywords.json'} and nature_keywords.json")
+    with open(nature_keywords_path) as f:
+        NATURE_KEYWORDS = json.load(f)
+    print(f"Loaded nature_keywords.json from: {nature_keywords_path}")
+except Exception as e:
+    print(f"ERROR loading nature_keywords.json: {e}")
+    raise
 
 # Step 2: Organize protocol questions by NatureCode 
 protocol_questions = defaultdict(list)
 for _, row in df.iterrows():
     protocol_questions[row["NatureCode"]].append((row["Question_ID"], row["Question_Text"]))
 
-# Step 3: Load embedding model 
-model = SentenceTransformer("all-MiniLM-L6-v2")
+# Step 3: Load embedding model (lazy loading to avoid import-time failures)
+_model_instance = None
+
+def get_model():
+    """Lazy load the SentenceTransformer model - only loads when first needed"""
+    global _model_instance
+    if _model_instance is None:
+        import os
+        
+        # Local model path where it was saved during Docker build
+        local_model_path = '/app/models/all-MiniLM-L6-v2'
+        
+        # Fallback to downloading if not in Docker (for local development)
+        if os.path.exists(local_model_path):
+            print(f"Loading SentenceTransformer model from local path: {local_model_path}", flush=True)
+            try:
+                _model_instance = SentenceTransformer(local_model_path)
+                print("SentenceTransformer model loaded successfully!", flush=True)
+            except Exception as e:
+                raise RuntimeError(f"Failed to load SentenceTransformer model from {local_model_path}. Error: {e}")
+        else:
+            # Not in Docker - try to download (for local development)
+            print("Local model not found, attempting to download...", flush=True)
+            try:
+                _model_instance = SentenceTransformer("all-MiniLM-L6-v2")
+                print("SentenceTransformer model downloaded and loaded successfully!", flush=True)
+            except Exception as e:
+                raise RuntimeError(f"Failed to load SentenceTransformer model 'all-MiniLM-L6-v2'. Error: {e}")
+                
+    return _model_instance
 
 # Step 4: Detection setup 
 # Words that are super common and might trigger false positives
@@ -49,6 +103,7 @@ def run_detection(transcript_path, transcript_text, output_folder="keywordsOutpu
     transcript_lower = transcript_text.lower()
 
     # Prepare embeddings for similarity comparison
+    model = get_model()  # Lazy load model when actually needed
     nature_names = list(NATURE_KEYWORDS.keys())
     nature_texts = [" ".join(NATURE_KEYWORDS[n]) for n in nature_names]
     nature_embeddings = model.encode(nature_texts, convert_to_numpy=True, normalize_embeddings=True)

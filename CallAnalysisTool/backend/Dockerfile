@@ -32,11 +32,26 @@ RUN python -c "import whisperx; \
     whisperx.load_align_model('en', 'cpu'); \
     print('All models downloaded successfully!')"
 
+# Set HuggingFace cache environment variables
+ENV HF_HOME=/root/.cache/huggingface
+ENV TRANSFORMERS_CACHE=/root/.cache/huggingface
+ENV SENTENCE_TRANSFORMERS_HOME=/root/.cache/huggingface
+
 # Pre-download SentenceTransformer model for nature code detection
-RUN python -c "from sentence_transformers import SentenceTransformer; \
+# Save to a specific local directory for offline use
+RUN mkdir -p /app/models && \
+    python -c "import os; \
+    from sentence_transformers import SentenceTransformer; \
+    model_path = '/app/models/all-MiniLM-L6-v2'; \
     print('Downloading SentenceTransformer model: all-MiniLM-L6-v2'); \
-    SentenceTransformer('all-MiniLM-L6-v2'); \
-    print('SentenceTransformer model downloaded successfully!')"
+    model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2'); \
+    print('Saving model to:', model_path); \
+    model.save(model_path); \
+    print('SentenceTransformer model saved successfully!'); \
+    print('Model embedding dimension:', model.get_sentence_embedding_dimension()); \
+    # Verify we can load it from the saved path; \
+    loaded_model = SentenceTransformer(model_path); \
+    print('Model verified - can load from local path!')"
 
 # Pre-download NLTK data
 RUN python -c "import nltk; nltk.download('punkt'); nltk.download('punkt_tab')"
