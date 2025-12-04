@@ -65,31 +65,63 @@ class AIGraderService:
                 ...
             }
         """
+        import traceback
+        
+        print("Starting grade_transcript method...", flush=True)
+        sys.stderr.write("Starting grade_transcript method...\n")
+        sys.stderr.flush()
+        
         # JSONTranscriptionParser expects a file path, so create a temp file
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as tmp:
-            json.dump(transcript_data, tmp)
-            tmp_path = tmp.name
+        try:
+            print("Creating temp file for transcript...", flush=True)
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as tmp:
+                json.dump(transcript_data, tmp)
+                tmp_path = tmp.name
+            print(f"Temp file created: {tmp_path}", flush=True)
+        except Exception as e:
+            sys.stderr.write(f"ERROR creating temp file: {e}\n{traceback.format_exc()}\n")
+            sys.stderr.flush()
+            raise
         
         try:
             # Step 1: Convert JSON to text format
+            print("Step 1: Converting JSON to text format...", flush=True)
+            sys.stderr.write("Step 1: Converting JSON to text format...\n")
+            sys.stderr.flush()
             transcript_text = json_to_text(tmp_path)
             if not transcript_text:
                 raise ValueError("Failed to parse transcript data")
+            print(f"Step 1 complete: Got transcript text ({len(transcript_text)} chars)", flush=True)
             
             # Step 2: Detect nature codes
-            nature_codes_text = detect_nature_codes_in_memory(tmp_path, transcript_text)
+            print("Step 2: Detecting nature codes...", flush=True)
+            sys.stderr.write("Step 2: Detecting nature codes...\n")
+            sys.stderr.flush()
+            try:
+                nature_codes_text = detect_nature_codes_in_memory(tmp_path, transcript_text)
+            except Exception as e:
+                sys.stderr.write(f"ERROR in nature code detection: {e}\n")
+                sys.stderr.write(f"Traceback: {traceback.format_exc()}\n")
+                sys.stderr.flush()
+                raise RuntimeError(f"Failed to detect nature codes: {e}")
+            
             if not nature_codes_text:
-                raise RuntimeError("Failed to detect nature codes")
+                raise RuntimeError("Failed to detect nature codes - empty result")
+            print(f"Step 2 complete: Got nature codes text", flush=True)
             
             # Step 3: Extract and sort nature codes by confidence
+            print("Step 3: Extracting nature codes...", flush=True)
             nature_codes = extract_all_nature_codes(nature_codes_text)
             if not nature_codes:
                 raise RuntimeError("No nature codes detected in transcript")
+            print(f"Step 3 complete: Found {len(nature_codes)} nature codes", flush=True)
             
             # Step 4: Get primary nature code (highest confidence)
             primary_nature_code = nature_codes[0][0]
+            print(f"Step 4 complete: Primary nature code: {primary_nature_code}", flush=True)
             
             # Step 5: Load questions for Case Entry AND primary nature code
+            print("Step 5: Loading questions...", flush=True)
             case_entry_questions = load_nature_code_questions("Case Entry")
             nature_code_questions = load_nature_code_questions(primary_nature_code)
             
@@ -98,12 +130,23 @@ class AIGraderService:
             
             if not all_questions:
                 raise RuntimeError("Failed to load questions from EMSQA.csv")
+            print(f"Step 5 complete: Loaded {len(all_questions)} questions", flush=True)
             
             # Step 6: Get AI grades
-            ai_grades = ai_grade_transcript(transcript_text, all_questions, primary_nature_code)
+            print("Step 6: Getting AI grades from Ollama...", flush=True)
+            sys.stderr.write("Step 6: Getting AI grades from Ollama...\n")
+            sys.stderr.flush()
+            try:
+                ai_grades = ai_grade_transcript(transcript_text, all_questions, primary_nature_code)
+            except Exception as e:
+                sys.stderr.write(f"ERROR in AI grading: {e}\n")
+                sys.stderr.write(f"Traceback: {traceback.format_exc()}\n")
+                sys.stderr.flush()
+                raise RuntimeError(f"AI grading failed: {e}")
             
             if not ai_grades:
                 raise RuntimeError("AI grading failed - empty response from Ollama")
+            print(f"Step 6 complete: Got {len(ai_grades)} grades", flush=True)
             
             # Step 7: Format grades to match API response structure
             formatted_grades = {}
@@ -115,7 +158,14 @@ class AIGraderService:
                     "status": self.KEY.get(code, "Unknown")
                 }
             
+            print("Step 7 complete: Grades formatted successfully", flush=True)
             return formatted_grades, primary_nature_code, all_questions
+        
+        except Exception as e:
+            sys.stderr.write(f"ERROR in grade_transcript: {e}\n")
+            sys.stderr.write(f"Full traceback:\n{traceback.format_exc()}\n")
+            sys.stderr.flush()
+            raise
         
         finally:
             # Clean up temp file

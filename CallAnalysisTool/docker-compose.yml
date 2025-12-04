@@ -2,6 +2,7 @@ services:
   frontend:
     image: callanalysistool-frontend:latest
     build: ./frontend
+    restart: unless-stopped
     ports:
       - 3000:3000
     environment:
@@ -10,6 +11,7 @@ services:
   backend:
     image: callanalysistool-backend:latest
     build: ./backend
+    restart: unless-stopped
     ports:
       - "5001:5001"
       - "11434:11434"
@@ -19,6 +21,9 @@ services:
       - DOCKER_CONTAINER=true
       - TRANSFORMERS_OFFLINE=1
       - HF_HUB_OFFLINE=1
+      - HF_HOME=/root/.cache/huggingface
+      - TRANSFORMERS_CACHE=/root/.cache/huggingface
+      - SENTENCE_TRANSFORMERS_HOME=/root/.cache/huggingface
     volumes:
       - ./backend/data:/app/data:ro
       - ./backend/output:/app/output

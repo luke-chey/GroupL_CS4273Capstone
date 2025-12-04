@@ -10,9 +10,13 @@
 import sys
 import pandas as pd
 import os
+from pathlib import Path
 from JSONTranscriptionParser import json_to_text
 from detect_naturecode import run_detection
 import ollama
+
+# Get the directory where this script is located (for reliable path resolution)
+SCRIPT_DIR = Path(__file__).parent
 
 # Configure Ollama client to use environment variable if set
 # The ollama Python client automatically uses OLLAMA_HOST env var
@@ -22,7 +26,41 @@ ollama_host = os.getenv('OLLAMA_HOST', 'http://localhost:11434')
 # Global variable to track Ollama initialization status
 _ollama_initialized = False
 
-# Add after the blueprint definition
+
+def check_ollama_ready(max_retries=5, retry_delay=2):
+    """
+    Check if Ollama is ready and responding.
+    
+    Args:
+        max_retries: Maximum number of retry attempts
+        retry_delay: Seconds to wait between retries
+        
+    Returns:
+        bool: True if Ollama is ready, False otherwise
+    """
+    import time
+    
+    for attempt in range(max_retries):
+        try:
+            print(f"Checking Ollama readiness (attempt {attempt + 1}/{max_retries})...")
+            response = ollama.generate(
+                model='llama3.1:8b',
+                prompt='Say "ready"',
+                options={'num_predict': 5, 'temperature': 0.0}
+            )
+            if response and 'response' in response:
+                print("Ollama is ready!")
+                return True
+        except Exception as e:
+            print(f"Ollama not ready yet: {e}")
+            if attempt < max_retries - 1:
+                print(f"Retrying in {retry_delay} seconds...")
+                time.sleep(retry_delay)
+    
+    print("Ollama readiness check failed after all retries")
+    return False
+
+
 def initialize_ollama():
     """
     Initialize and preload the Ollama model.
@@ -116,7 +154,9 @@ def extract_all_nature_codes(text):
 # Output: dict of questions from given nature code
 def load_nature_code_questions(nature_code):
     try:
-        df = pd.read_csv("data/EMSQA.csv")
+        # Use absolute path based on script location for reliable resolution
+        emsqa_path = SCRIPT_DIR / "data" / "EMSQA.csv"
+        df = pd.read_csv(emsqa_path)
         nature_questions = df[df['NatureCode'] == nature_code]
         
         questions_dict = {}
@@ -135,7 +175,7 @@ def load_nature_code_questions(nature_code):
     
     # Error handling
     except FileNotFoundError:
-        print(f"Error: EMSQA.csv file not found in data/ directory")
+        print(f"Error: EMSQA.csv file not found at {SCRIPT_DIR / 'data' / 'EMSQA.csv'}")
         return {}
     except Exception as e:
         print(f"Error loading questions for Nature Code {nature_code}: {e}")
