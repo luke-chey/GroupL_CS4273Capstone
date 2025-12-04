@@ -88,6 +88,8 @@ const UploadFileContainer = () => {
     setUploadProgress("Processing files...");
 
     try {
+      // Transcription + Grading Pipeline
+
       // ##################################################################################
       // ###############            ZIP FILE UPLOAD              ##########################
       // ##################################################################################
@@ -95,14 +97,16 @@ const UploadFileContainer = () => {
         const formData = new FormData();
         formData.append("file", selectedFiles[0]);
         console.log("Zip File");
-
         // ##################################################################################
         // ###############            TRANSCRIPTION              ##########################
         // ##################################################################################
         setUploadProgress("Transcribing audio...");
         const transcriptionResponse = await fetch(
           "http://localhost:5001/api/transcribe",
-          { method: "POST", body: formData }
+          {
+            method: "POST",
+            body: formData,
+          }
         );
         const transcriptionResult = await transcriptionResponse.json();
         console.log(transcriptionResult);
@@ -134,8 +138,10 @@ const UploadFileContainer = () => {
 
         const gradeResponse = await fetch("http://localhost:5001/api/grade", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(transcriptionData.data),
+          headers: {
+            "Content-Type": "application/json", // Important: Set JSON content type
+          },
+          body: JSON.stringify(transcriptionData.data), // Send the transcript data directly
         });
         const gradeResult = await gradeResponse.json();
         console.log(gradeResult);
@@ -146,20 +152,25 @@ const UploadFileContainer = () => {
         // ##################################################################################
         // ###############            UPDATE LOCAL STORAGE              ##########################
         // ##################################################################################
-        const transcriptFilename = `${foldername}.json`;
-        const dispatcherName = foldername.split("_")[2] || "Unknown";
+        const transcriptFilename = `${foldername}.json`; // foldername from earlier transcription step
+        const dispatcherName = foldername.split("_")[2] || "Unknown"; // from YYYYMMDD_HHMMSS_dispatcher
 
+        // Create/update dispatcher in localStorage
         const stored = localStorage.getItem("dispatchers");
         const dispatchers = stored ? (JSON.parse(stored) as Dispatcher[]) : [];
 
-        // Assign to existing dispatcher or John Doe if not found
         let dispatcher = dispatchers.find((d) => d.name === dispatcherName);
         if (!dispatcher) {
-          dispatcher = dispatchers.find((d) => d.name === "John Doe");
-          if (!dispatcher) {
-            alert("John Doe dispatcher does not exist! Please add John Doe first.");
-            return;
-          }
+          dispatcher = {
+            id: crypto.randomUUID(),
+            name: dispatcherName,
+            files: {
+              transcriptFiles: [],
+              audioFiles: [],
+            },
+            grades: {},
+          };
+          dispatchers.push(dispatcher);
         }
 
         // Record transcript file (avoid duplicates)
@@ -187,7 +198,10 @@ const UploadFileContainer = () => {
           per_question: perQuestion,
         };
 
-        if (foldername && !dispatcher.files.audioFiles.includes(`${foldername}.wav`)) {
+        if (
+          foldername &&
+          !dispatcher.files.audioFiles.includes(`${foldername}.wav`)
+        ) {
           dispatcher.files.audioFiles.push(`${foldername}.wav`);
         }
 
@@ -196,13 +210,208 @@ const UploadFileContainer = () => {
 
         setTimeout(() => {
           setShowProgressModal(false);
-          router.push(`/dispatchers`);
+          router.push(`/records/${dispatcher.id}`);
         }, 1000);
       }
+      // else {
+      //   ////////////// JSON File Upload (OLD)
+      //   const dispatcherMap = new Map<
+      //     string,
+      //     { transcriptFiles: File[]; audioFiles: File[] }
+      //   >();
+
+      //   selectedFiles.forEach((file) => {
+      //     const filename = file.name;
+      //     const firstUnderscoreIndex = filename.indexOf("_");
+      //     const secondUnderscoreIndex = filename.indexOf(
+      //       "_",
+      //       firstUnderscoreIndex + 1
+      //     );
+      //     const dotIndex = filename.indexOf(".");
+
+      //     if (secondUnderscoreIndex !== -1 && dotIndex !== -1) {
+      //       const dispatcherName = filename.substring(
+      //         secondUnderscoreIndex + 1,
+      //         dotIndex
+      //       );
+      //       const fileExtension = filename.substring(dotIndex);
+
+      //       // Initialize dispatcher if not exists
+      //       if (!dispatcherMap.has(dispatcherName)) {
+      //         dispatcherMap.set(dispatcherName, {
+      //           transcriptFiles: [],
+      //           audioFiles: [],
+      //         });
+      //       }
+
+      //       const dispatcherData = dispatcherMap.get(dispatcherName)!;
+
+      //       // Categorize files based on extension
+      //       if (fileExtension === ".json") {
+      //         dispatcherData.transcriptFiles.push(file);
+      //       } else {
+      //         dispatcherData.audioFiles.push(file);
+      //       }
+      //     }
+      //   });
+
+      //   // Helper function to update localStorage and notify listeners
+      //   const updateDispatcherInStorage = (
+      //     dispatcherName: string,
+      //     filename: string,
+      //     grade: number | undefined,
+      //     isTranscriptFile: boolean
+      //   ) => {
+      //     const storedDispatchers = localStorage.getItem("dispatchers");
+      //     const existingDispatchers: Dispatcher[] = storedDispatchers
+      //       ? JSON.parse(storedDispatchers)
+      //       : [];
+
+      //     // Find or create dispatcher
+      //     let dispatcher = existingDispatchers.find(
+      //       (d) => d.name === dispatcherName
+      //     );
+
+      //     if (!dispatcher) {
+      //       // Create new dispatcher
+      //       dispatcher = {
+      //         id: uuidv4(),
+      //         name: dispatcherName,
+      //         files: {
+      //           transcriptFiles: [],
+      //           audioFiles: [],
+      //         },
+      //         grades: {},
+      //       };
+      //       existingDispatchers.push(dispatcher);
+      //     }
+
+      //     // Add file if not already present
+      //     if (isTranscriptFile) {
+      //       if (!dispatcher.files.transcriptFiles.includes(filename)) {
+      //         dispatcher.files.transcriptFiles.push(filename);
+      //       }
+      //       // Update grade
+      //       if (!dispatcher.grades) {
+      //         dispatcher.grades = {};
+      //       }
+      //       if (grade !== undefined) {
+      //         dispatcher.grades[filename] = grade;
+      //       }
+      //     } else {
+      //       if (!dispatcher.files.audioFiles.includes(filename)) {
+      //         dispatcher.files.audioFiles.push(filename);
+      //       }
+      //     }
+
+      //     // Store updated dispatchers array in localStorage
+      //     localStorage.setItem(
+      //       "dispatchers",
+      //       JSON.stringify(existingDispatchers)
+      //     );
+
+      //     // Dispatch custom event to notify other components
+      //     window.dispatchEvent(new CustomEvent("dispatchersUpdated"));
+      //   };
+
+      //   // Helper function to remove a file from selectedFiles by filename
+      //   const removeFileFromList = (filename: string) => {
+      //     setSelectedFiles((prev) =>
+      //       prev.filter((file) => file.name !== filename)
+      //     );
+      //   };
+
+      //   // First, add all audio files to their dispatchers and remove them from the list
+      //   dispatcherMap.forEach((files, dispatcherName) => {
+      //     files.audioFiles.forEach((audioFile) => {
+      //       updateDispatcherInStorage(
+      //         dispatcherName,
+      //         audioFile.name,
+      //         undefined,
+      //         false
+      //       );
+      //       // Remove audio file from selected files list immediately
+      //       removeFileFromList(audioFile.name);
+      //     });
+      //   });
+
+      //   // Upload JSON files to API and get grades
+      //   let successCount = 0;
+      //   let errorCount = 0;
+      //   const errors: string[] = [];
+
+      //   for (const [dispatcherName, files] of dispatcherMap.entries()) {
+      //     // Process each JSON file
+      //     for (const jsonFile of files.transcriptFiles) {
+      //       setUploadProgress(`Analyzing ${jsonFile.name}...`);
+
+      //       try {
+      //         const apiResponse = await uploadFileForAnalysis(jsonFile);
+      //         const grade = calculateGrade(apiResponse);
+
+      //         // Update localStorage immediately after each file is graded
+      //         updateDispatcherInStorage(
+      //           dispatcherName,
+      //           jsonFile.name,
+      //           grade,
+      //           true
+      //         );
+
+      //         // Remove file from selected files list after successful grading
+      //         removeFileFromList(jsonFile.name);
+
+      //         successCount++;
+      //       } catch (error) {
+      //         errorCount++;
+      //         const errorMessage =
+      //           error instanceof Error ? error.message : "Unknown error";
+      //         errors.push(`${jsonFile.name}: ${errorMessage}`);
+      //         console.error(`Error analyzing ${jsonFile.name}:`, error);
+
+      //         // Still add the file even if grading failed
+      //         updateDispatcherInStorage(
+      //           dispatcherName,
+      //           jsonFile.name,
+      //           undefined,
+      //           true
+      //         );
+
+      //         // Remove file from selected files list even if grading failed
+      //         removeFileFromList(jsonFile.name);
+      //       }
+      //     }
+      //   }
+
+      //   // Show appropriate message based on results
+      //   if (successCount === 0 && errorCount > 0) {
+      //     // All files failed
+      //     alert(
+      //       `Failed to analyze any files.\n\nErrors:\n${errors
+      //         .slice(0, 5)
+      //         .join("\n")}${
+      //         errors.length > 5 ? `\n...and ${errors.length - 5} more` : ""
+      //       }\n\nFiles were saved but no grades were calculated.`
+      //     );
+      //   } else if (errorCount > 0) {
+      //     // Some files succeeded, some failed
+      //     alert(
+      //       `Successfully analyzed ${successCount} file(s), but ${errorCount} file(s) failed.\n\nFailed files:\n${errors
+      //         .slice(0, 3)
+      //         .join("\n")}${
+      //         errors.length > 3 ? `\n...and ${errors.length - 3} more` : ""
+      //       }`
+      //     );
+      //   } else {
+      //     // All files succeeded
+      //     alert(`Successfully stored dispatcher(s) with files and grades!`);
+      //   }
+      // }
     } catch (error) {
       console.error("Upload error:", error);
       alert(
-        `Error uploading files: ${error instanceof Error ? error.message : "Unknown error"}`
+        `Error uploading files: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
       );
     } finally {
       setIsUploading(false);
@@ -212,6 +421,12 @@ const UploadFileContainer = () => {
 
   return (
     <div className="w-full max-w-2xl mx-auto p-6">
+      <div className="mb-4">
+        <h2 className="text-xl font-semibold mb-2">
+          Upload Zip and JSON Files
+        </h2>
+      </div>
+
       {/* Drag and Drop Area */}
       <div
         className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${

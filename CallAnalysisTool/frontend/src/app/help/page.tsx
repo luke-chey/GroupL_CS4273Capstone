@@ -76,9 +76,10 @@ export default function Help() {
 
   return (
     <div className="min-h-screen bg-gray-50 p-4 md:p-8 max-w-6xl mx-auto">
-      <h1 className="text-4xl font-extrabold mb-6 text-center" style={{ color: "#002d62" }}>
+      <h1 className="text-4xl font-extrabold mb-6" style={{ color: "#002d62" }}>
         Help Center
       </h1>
+
       {/* Tabs */}
       <div className="flex space-x-4 mb-6 border-b border-gray-300">
         <button
