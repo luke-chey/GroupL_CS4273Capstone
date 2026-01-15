@@ -1,14 +1,14 @@
 {
-  "date": 0,
-  "time": 0,
-  "total_segments": 20,
+  "date": 20251017,
+  "time": 123101,
+  "total_segments": 19,
   "speakers": [
-    "20251017_123101_bjones",
+    "bjones",
     "caller"
   ],
   "segments": [
     {
-      "speaker": "20251017_123101_bjones",
+      "speaker": "bjones",
       "start": 0.385,
       "end": 4.609,
       "text": "9-9-9-1-1, what's the location of the emergency?"
@@ -20,7 +20,7 @@
       "text": "Hi, this is Devin."
     },
     {
-      "speaker": "caller",
+      "speaker": "bjones",
       "start": 6.652,
       "end": 10.175,
       "text": "I'm calling from the Norman Regional Stat Urgent Care here on Porter."
@@ -38,16 +38,10 @@
       "text": "He's needing a ride."
     },
     {
-      "speaker": "20251017_123101_bjones",
+      "speaker": "bjones",
       "start": 16.062,
-      "end": 17.623,
-      "text": "Okay."
-    },
-    {
-      "speaker": "20251017_123101_bjones",
-      "start": 17.643,
       "end": 19.866,
-      "text": "For what's going on?"
+      "text": "Okay, so what's going on?"
     },
     {
       "speaker": "caller",
@@ -62,19 +56,19 @@
       "text": "Age?"
     },
     {
-      "speaker": "20251017_123101_bjones",
+      "speaker": "bjones",
       "start": 25.552,
       "end": 26.352,
       "text": "Sir, how old are you?"
     },
     {
-      "speaker": "20251017_123101_bjones",
+      "speaker": "bjones",
       "start": 27.674,
       "end": 28.755,
       "text": "Sir, how old are you?"
     },
     {
-      "speaker": "20251017_123101_bjones",
+      "speaker": "bjones",
       "start": 30.895,
       "end": 31.155,
       "text": "34."
@@ -86,7 +80,7 @@
       "text": "Okay."
     },
     {
-      "speaker": "20251017_123101_bjones",
+      "speaker": "bjones",
       "start": 37.104,
       "end": 38.285,
       "text": "I will get them on the way."
@@ -110,7 +104,7 @@
       "text": "Thank you."
     },
     {
-      "speaker": "20251017_123101_bjones",
+      "speaker": "bjones",
       "start": 43.293,
       "end": 43.413,
       "text": "Bye."
@@ -122,7 +116,7 @@
       "text": "Bye-bye."
     },
     {
-      "speaker": "20251017_123101_bjones",
+      "speaker": "bjones",
       "start": 48.219,
       "end": 50.743,
       "text": "Ladder 1 and stud 11, stand by for tone."

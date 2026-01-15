@@ -187,17 +187,16 @@ def kmeans_clustering(data, k=2, max_iters=100):
 
     return labels, centroids
 
-def extract_dispatcher_name(json_filename):
+def extract_dispatcher_name(basename):
     """
-    Extracts the dispatcher name from the JSON filename.
-    Expected format: YYYYMMDD_HHMMSS_dispatchername.json
+    Extracts the dispatcher name from the audio/folder basename.
+    Expected format: YYYYMMDD_HHMMSS_dispatchername
 
     Args:
-        json_filename(str): The JSON filename.
+        basename(str): The base name (without extension) in format YYYYMMDD_HHMMSS_dispatchername
     Returns:
-        The dispatcher name extracted from the filename.
+        A tuple of (date_part, time_part, dispatcher_name) extracted from the basename.
     """
-    basename = os.path.splitext(os.path.basename(json_filename))[0]
     parts = basename.split('_')
     if len(parts) >= 3:
         date_part = parts[0]
@@ -214,7 +213,7 @@ def create_combined_transcript(speaker_segments, audio_basename, json_filename, 
     Args:
         speaker_segments(dict): A dictionary containing the list of dispatcher and caller segments.
         audio_basename(str):    The base name of the audio file (without extension). This is used to name the output file.
-        json_filename(str):     The input JSON filename to extract dispatcher info from.
+        json_filename(str):     The input JSON filename (used for output directory if output_path is None).
         output_path(str):       Optional full path for output file. If None, uses directory from json_filename.
     Returns:
         Saves the final speaker-separated transcript as <audio_basename>.json in the specified directory.
@@ -227,7 +226,8 @@ def create_combined_transcript(speaker_segments, audio_basename, json_filename, 
     else:
         output_file = output_path
 
-    date_str, time_str, dispatcher_name = extract_dispatcher_name(json_filename)
+    # Extract dispatcher info from audio_basename (format: YYYYMMDD_HHMMSS_dispatchername)
+    date_str, time_str, dispatcher_name = extract_dispatcher_name(audio_basename)
 
     all_segments = []
     for speaker, segments in speaker_segments.items():
