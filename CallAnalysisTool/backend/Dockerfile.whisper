@@ -18,6 +18,8 @@ ENV HF_HOME=/preload_cache
 ENV TRANSFORMERS_CACHE=/preload_cache
 ENV SENTENCE_TRANSFORMERS_HOME=/preload_cache
 
+ENV TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=true
+
 # Pre-download WhisperX models and sentence-transformers into the preload cache
 RUN python -c "import whisperx; whisperx.load_model('large-v3', 'cpu', compute_type='int8'); whisperx.load_align_model('en', 'cpu')"
 RUN python -c "from sentence_transformers import SentenceTransformer; model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2'); model.save('/preload_cache/all-MiniLM-L6-v2')"
