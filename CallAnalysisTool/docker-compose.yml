@@ -36,6 +36,7 @@ services:
     volumes:
       - whisperx_cache:/root/.cache/huggingface
       - models_data:/app/models
+      - torch_cache:/root/.cache/torch
 
   backend:
     image: callanalysistool-backend:latest
@@ -64,8 +65,10 @@ services:
       - ./backend/output:/app/output
       - whisperx_cache:/root/.cache/huggingface:rw
       - models_data:/app/models:ro
+      - torch_cache:/root/.cache/torch
 
 volumes:
   whisperx_cache:
   ollama_data:
   models_data:
+  torch_cache:
