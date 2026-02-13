@@ -6,27 +6,58 @@ services:
     ports:
       - 3000:3000
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:5001
+      # Use the docker-compose service name so frontend can reach backend inside the network
+      - NEXT_PUBLIC_API_URL=http://backend:5001
+
+  ollama:
+    image: callanalysistool-ollama:latest
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+
+  whisper:
+    image: callanalysistool-whisper:latest
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.whisper
+    restart: unless-stopped
+    volumes:
+      - whisperx_cache:/root/.cache/huggingface
+      - models_data:/app/models
 
   backend:
     image: callanalysistool-backend:latest
-    build: ./backend
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.flask
     restart: unless-stopped
+    depends_on:
+      - ollama
+      - whisper
     ports:
       - "5001:5001"
-      - "11434:11434"
     environment:
       - FLASK_ENV=production
-      - OLLAMA_HOST=http://localhost:11434
+      - OLLAMA_HOST=http://ollama:11434
       - DOCKER_CONTAINER=true
       - TRANSFORMERS_OFFLINE=1
       - HF_HUB_OFFLINE=1
       - HF_HOME=/root/.cache/huggingface
       - TRANSFORMERS_CACHE=/root/.cache/huggingface
       - SENTENCE_TRANSFORMERS_HOME=/root/.cache/huggingface
+      - TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=true
     volumes:
       - ./backend/data:/app/data:ro
       - ./backend/output:/app/output
+      - whisperx_cache:/root/.cache/huggingface:rw
+      - models_data:/app/models:ro
 
 volumes:
   whisperx_cache:
+  ollama_data:
+  models_data:

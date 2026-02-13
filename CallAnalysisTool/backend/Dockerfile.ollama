@@ -1,0 +1,34 @@
+# Ollama server Dockerfile
+FROM ubuntu:22.04
+
+# Install curl and ca-certificates for Ollama installer
+RUN apt-get update && apt-get install -y \
+    curl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Ollama
+RUN curl -fsSL https://ollama.ai/install.sh | sh
+
+EXPOSE 11434
+
+# Add an entrypoint that will pull required Ollama models into the named volume on first run
+RUN mkdir -p /usr/local/bin
+RUN echo '#!/bin/sh' > /usr/local/bin/ollama_entrypoint.sh && \
+    echo 'set -e' >> /usr/local/bin/ollama_entrypoint.sh && \
+    echo 'if [ -z "$(ls -A /root/.ollama 2>/dev/null)" ]; then' >> /usr/local/bin/ollama_entrypoint.sh && \
+    echo '  echo "No Ollama data found - starting server and pulling models..."' >> /usr/local/bin/ollama_entrypoint.sh && \
+    echo '  ollama serve & OLLAMA_PID=$!' >> /usr/local/bin/ollama_entrypoint.sh && \
+    echo '  sleep 5' >> /usr/local/bin/ollama_entrypoint.sh && \
+    echo '  echo "Pulling model: llama3.1:8b"' >> /usr/local/bin/ollama_entrypoint.sh && \
+    echo '  ollama pull llama3.1:8b' >> /usr/local/bin/ollama_entrypoint.sh && \
+    echo '  echo "Model pulled."' >> /usr/local/bin/ollama_entrypoint.sh && \
+    echo '  wait $OLLAMA_PID' >> /usr/local/bin/ollama_entrypoint.sh && \
+    echo 'else' >> /usr/local/bin/ollama_entrypoint.sh && \
+    echo '  echo "Ollama data present, starting server..."' >> /usr/local/bin/ollama_entrypoint.sh && \
+    echo '  exec ollama serve' >> /usr/local/bin/ollama_entrypoint.sh && \
+    echo 'fi' >> /usr/local/bin/ollama_entrypoint.sh && \
+    chmod +x /usr/local/bin/ollama_entrypoint.sh
+
+# Entrypoint starts Ollama and pulls model into mounted /root/.ollama on first run
+CMD ["/usr/local/bin/ollama_entrypoint.sh"]
