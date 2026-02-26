@@ -71,7 +71,7 @@ def create_app():
         # In Docker, wait a bit for Ollama to start, then check readiness
         print("Waiting for Ollama to start...")
         try:
-            if check_ollama_ready(max_retries=8, retry_delay=15):
+            if check_ollama_ready(max_retries=6, retry_delay=10):
                 print("Ollama is ready!")
                 initialize_ollama()
             else:

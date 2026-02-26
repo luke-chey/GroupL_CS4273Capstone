@@ -1,18 +1,7 @@
-FROM ubuntu:22.04
-
-RUN apt-get update && apt-get install -y \
-    curl \
-    ca-certificates \
-    zstd \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN curl -fsSL https://ollama.ai/install.sh | sh
+FROM ollama/ollama:latest
 
 ENV TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=true
 
-EXPOSE 11434
+ENV OLLAMA_HOST=0.0.0.0
 
-COPY ollama_entrypoint.sh /usr/local/bin/ollama_entrypoint.sh
-RUN chmod +x /usr/local/bin/ollama_entrypoint.sh
-
-CMD ["/usr/local/bin/ollama_entrypoint.sh"]
+CMD ["serve"]

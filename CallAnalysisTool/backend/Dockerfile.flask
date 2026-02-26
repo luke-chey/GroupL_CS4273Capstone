@@ -3,6 +3,7 @@ FROM python:3.13.7
 
 # Install minimal system deps for audio I/O if needed by the backend
 RUN apt-get update && apt-get install -y \
+    ca-certificates \
     ffmpeg \
     libsndfile1 \
     && rm -rf /var/lib/apt/lists/*
@@ -12,6 +13,13 @@ WORKDIR /app
 # Install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Set fixed nltk data directory
+ENV NLTK_DATA=/usr/local/share/nltk_data
+# Create directory
+RUN mkdir -p /usr/local/share/nltk_data
+# Download punkt into that directory at build time
+RUN python -m nltk.downloader -d /usr/local/share/nltk_data punkt_tab
 
 # Copy application code
 COPY . .

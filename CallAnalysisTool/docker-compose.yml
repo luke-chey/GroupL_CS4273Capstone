@@ -45,8 +45,6 @@ services:
       dockerfile: Dockerfile.flask
     restart: unless-stopped
     depends_on:
-      ollama:
-        condition: service_healthy
       whisper:
         condition: service_started
     ports:
@@ -67,8 +65,24 @@ services:
       - models_data:/app/models:ro
       - torch_cache:/root/.cache/torch
 
+# Online deployment (creates own volumes)
+# volumes:
+#   whisperx_cache:
+#   ollama_data:
+#   models_data:
+#   torch_cache:
+
+# Offline deployment (uses existing volumes, follows export naming convention)
 volumes:
   whisperx_cache:
+    external: true
+    name: callanalysistool_whisperx_cache
   ollama_data:
+    external: true
+    name: callanalysistool_ollama_data
   models_data:
+    external: true
+    name: callanalysistool_models_data
   torch_cache:
+    external: true
+    name: callanalysistool_torch_cache
