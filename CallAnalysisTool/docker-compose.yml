@@ -6,27 +6,83 @@ services:
     ports:
       - 3000:3000
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:5001
+      # Use the docker-compose service name so frontend can reach backend inside the network
+      - NEXT_PUBLIC_API_URL=http://backend:5001
+
+  ollama:
+    image: callanalysistool-ollama:latest
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    environment:
+      - TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=true
+      - OLLAMA_HOST=0.0.0.0
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434"]
+    volumes:
+      - ollama_data:/root/.ollama
+
+  whisper:
+    image: callanalysistool-whisper:latest
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.whisper
+    restart: unless-stopped
+    environment:
+      - TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=true
+    volumes:
+      - whisperx_cache:/root/.cache/huggingface
+      - models_data:/app/models
+      - torch_cache:/root/.cache/torch
 
   backend:
     image: callanalysistool-backend:latest
-    build: ./backend
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.flask
     restart: unless-stopped
+    depends_on:
+      whisper:
+        condition: service_started
     ports:
       - "5001:5001"
-      - "11434:11434"
     environment:
       - FLASK_ENV=production
-      - OLLAMA_HOST=http://localhost:11434
+      - OLLAMA_HOST=http://ollama:11434
       - DOCKER_CONTAINER=true
       - TRANSFORMERS_OFFLINE=1
       - HF_HUB_OFFLINE=1
       - HF_HOME=/root/.cache/huggingface
-      - TRANSFORMERS_CACHE=/root/.cache/huggingface
       - SENTENCE_TRANSFORMERS_HOME=/root/.cache/huggingface
+      - TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=true
     volumes:
       - ./backend/data:/app/data:ro
       - ./backend/output:/app/output
+      - whisperx_cache:/root/.cache/huggingface:rw
+      - models_data:/app/models:ro
+      - torch_cache:/root/.cache/torch
 
+# Online deployment (creates own volumes)
+# volumes:
+#   whisperx_cache:
+#   ollama_data:
+#   models_data:
+#   torch_cache:
+
+# Offline deployment (uses existing volumes, follows export naming convention)
 volumes:
   whisperx_cache:
+    external: true
+    name: callanalysistool_whisperx_cache
+  ollama_data:
+    external: true
+    name: callanalysistool_ollama_data
+  models_data:
+    external: true
+    name: callanalysistool_models_data
+  torch_cache:
+    external: true
+    name: callanalysistool_torch_cache

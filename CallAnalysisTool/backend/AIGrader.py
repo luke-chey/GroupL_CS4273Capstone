@@ -42,7 +42,8 @@ def check_ollama_ready(max_retries=5, retry_delay=2):
     
     for attempt in range(max_retries):
         try:
-            print(f"Checking Ollama readiness (attempt {attempt + 1}/{max_retries})...")
+            print(f"Checking Ollama at {ollama_host} (attempt {attempt + 1}/{max_retries})...")
+            
             response = ollama.generate(
                 model='llama3.1:8b',
                 prompt='Say "ready"',
@@ -280,6 +281,8 @@ Important: Be accurate and return valid JSON only."""
                 'timeout': 120       # 2 minute timeout
             }
         )
+        print("Raw respons: ", response)
+
         # Extract JSON from response
         import json
         import re

@@ -26,3 +26,9 @@ testCoverageC
 
 # Processed files
 CallAnalysisTool/backend/output/
+
+# Test data (Confidential)
+CallAnalysisTool/test_data/
+
+# Docker exports
+CallAnalysisTool/offline_backup/

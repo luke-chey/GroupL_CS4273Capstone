@@ -17,7 +17,7 @@ from flask_cors import CORS
 from api.routes.grading import grading_bp
 from api.routes.health import health_bp
 from api.routes.transcription import transcription_bp, initialize_transcriber
-from AIGrader import initialize_ollama
+from AIGrader import initialize_ollama, check_ollama_ready
 
 def create_app():
     """Application factory pattern"""
@@ -69,23 +69,15 @@ def create_app():
             print("Models will be initialized on first request.")
     else:
         # In Docker, wait a bit for Ollama to start, then check readiness
-        import time
-        import threading
-        def wait_for_ollama():
-            print("Waiting for Ollama to start...")
-            time.sleep(5)  # Give Ollama time to start
-            try:
-                from AIGrader import check_ollama_ready
-                if check_ollama_ready(max_retries=10, retry_delay=3):
-                    print("Ollama is ready!")
-                    initialize_ollama()
-                else:
-                    print("Warning: Ollama readiness check failed. Will retry on first request.")
-            except Exception as e:
-                print(f"Warning: Could not check Ollama readiness: {e}")
-        
-        # Start in background thread so Flask can start immediately
-        threading.Thread(target=wait_for_ollama, daemon=True).start()
+        print("Waiting for Ollama to start...")
+        try:
+            if check_ollama_ready(max_retries=6, retry_delay=10):
+                print("Ollama is ready!")
+                initialize_ollama()
+            else:
+                print("Warning: Ollama readiness check failed. Will retry on first request.")
+        except Exception as e:
+            print(f"Warning: Could not check Ollama readiness: {e}")
     return app
 
 if __name__ == '__main__':

@@ -1,0 +1,7 @@
+FROM ollama/ollama:latest
+
+ENV TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=true
+
+ENV OLLAMA_HOST=0.0.0.0
+
+CMD ["serve"]
