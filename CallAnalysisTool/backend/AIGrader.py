@@ -278,7 +278,9 @@ Important: Be accurate and return valid JSON only."""
                 'top_p': 0.9,        # Slightly more focused responses
                 'num_predict': 500,  # Limit response length
                 'timeout': 120,       # 2 minute timeout
-                'seed': 42
+                'seed': 42,
+                'num_gpu': 0,
+                'top_k': 0.9
             }
         )
         # Extract JSON from response
