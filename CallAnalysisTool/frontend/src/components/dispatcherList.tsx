@@ -52,14 +52,32 @@ const DispatcherList = () => {
     d.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  const compareByNameAsc = (
+    a: Dispatcher & { overallGrade: number },
+    b: Dispatcher & { overallGrade: number }
+  ) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+
+  const sortByGradeDescending = (
+    a: Dispatcher & { overallGrade: number },
+    b: Dispatcher & { overallGrade: number }
+  ) => {
+    if (b.overallGrade !== a.overallGrade) {
+      return b.overallGrade - a.overallGrade;
+    }
+
+    return compareByNameAsc(a, b);
+  };
+
+  const topDispatchers = [...dispatchersWithGrades]
+    .sort(sortByGradeDescending)
+    .slice(0, 3);
+
   // sort dispatchers by overall grade
   const sortedDispatchers = [...filteredDispatchers].sort((a, b) =>
     sortDescending
       ? b.overallGrade - a.overallGrade
       : a.overallGrade - b.overallGrade
   );
-
-  const topDispatchers = sortedDispatchers.slice(0, 3);
   const otherDispatchers = sortedDispatchers.slice(3);
 
   // get grade color
@@ -90,7 +108,7 @@ const DispatcherList = () => {
       )}
 
       {/* Top Dispatchers */}
-      {topDispatchers.length > 0 && (
+      {topDispatchers.length > 0 && searchQuery.trim().length === 0 && (
         <div className="mb-10">
           <h2 className="text-xl sm:text-2xl font-bold mb-4 text-center text-blue-600">
             Top Dispatchers
