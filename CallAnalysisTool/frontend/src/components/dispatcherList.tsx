@@ -79,6 +79,11 @@ const DispatcherList = () => {
       : a.overallGrade - b.overallGrade
   );
   const otherDispatchers = sortedDispatchers.slice(3);
+  const gradeRankById = new Map(
+    [...filteredDispatchers]
+      .sort(sortByGradeDescending)
+      .map((dispatcher, index) => [dispatcher.id, index + 1] as const)
+  );
 
   // get grade color
   const gradeColor = (grade: number) =>
@@ -185,9 +190,11 @@ const DispatcherList = () => {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {otherDispatchers.map((dispatcher, index) => (
+                {otherDispatchers.map((dispatcher) => (
                   <tr key={dispatcher.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-2 text-sm">{index + 4}</td>
+                    <td className="px-4 py-2 text-sm">
+                      {gradeRankById.get(dispatcher.id)}
+                    </td>
                     <td className="px-4 py-2 text-sm">
                       <Link
                         href={`/records/${dispatcher.id}`}
