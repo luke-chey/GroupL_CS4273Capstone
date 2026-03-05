@@ -1,10 +1,14 @@
 "use client";
 import React, { useState, useRef } from "react";
 import { Dispatcher } from "@/types/dispatcher";
-import { v4 as uuidv4 } from "uuid";
-import { uploadFileForAnalysis, calculateGrade } from "@/lib/api";
 import ProgressModal from "./ProgressModal";
 import { useRouter } from "next/navigation";
+
+interface BatchPageEntry {
+  dispatcherId: string;
+  transcriptFilename: string;
+  uploadOrder: number;
+}
 
 const UploadFileContainer = () => {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
@@ -76,6 +80,157 @@ const UploadFileContainer = () => {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
   };
 
+  const getZipFiles = (files: File[]) =>
+    files.filter((file) => file.name.endsWith(".zip"));
+
+  // Normalize backend grade shape so UI consumers can stay schema-stable.
+  const parsePerQuestion = (gradeResult: any) =>
+    gradeResult?.grades && typeof gradeResult.grades === "object"
+      ? Object.fromEntries(
+          Object.entries(gradeResult.grades).map(([qid, g]: any) => [
+            qid,
+            { code: g.code, label: g.label, status: g.status },
+          ])
+        )
+      : {};
+
+  const loadDispatchersFromStorage = (): Dispatcher[] => {
+    const stored = localStorage.getItem("dispatchers");
+    return stored ? (JSON.parse(stored) as Dispatcher[]) : [];
+  };
+
+  const saveDispatchersToStorage = (dispatchers: Dispatcher[]) => {
+    localStorage.setItem("dispatchers", JSON.stringify(dispatchers));
+  };
+
+  // Keep localStorage write logic in one place to avoid drift across flows.
+  const upsertDispatcherWithGrade = (
+    dispatchers: Dispatcher[],
+    dispatcherName: string,
+    foldername: string,
+    transcriptFilename: string,
+    gradeResult: any
+  ) => {
+    let dispatcher = dispatchers.find((d) => d.name === dispatcherName);
+    if (!dispatcher) {
+      dispatcher = {
+        id: crypto.randomUUID(),
+        name: dispatcherName,
+        files: {
+          transcriptFiles: [],
+          audioFiles: [],
+        },
+        grades: {},
+      };
+      dispatchers.push(dispatcher);
+    }
+
+    if (!dispatcher.files.transcriptFiles.includes(transcriptFilename)) {
+      dispatcher.files.transcriptFiles.push(transcriptFilename);
+    }
+
+    if (!dispatcher.grades) {
+      dispatcher.grades = {};
+    }
+    dispatcher.grades[transcriptFilename] = {
+      grade_percentage: Math.round(gradeResult.grade_percentage ?? 0),
+      detected_nature_code: gradeResult.detected_nature_code,
+      per_question: parsePerQuestion(gradeResult),
+    };
+
+    if (
+      foldername &&
+      !dispatcher.files.audioFiles.includes(`${foldername}.wav`)
+    ) {
+      dispatcher.files.audioFiles.push(`${foldername}.wav`);
+    }
+
+    return dispatcher;
+  };
+
+  const orderBatchPages = (batchPages: BatchPageEntry[]) => {
+    // Group by dispatcher first so multi-file dispatchers stay contiguous.
+    const groupedByDispatcher = new Map<string, BatchPageEntry[]>();
+    const dispatcherOrder: string[] = [];
+
+    for (const page of batchPages) {
+      if (!groupedByDispatcher.has(page.dispatcherId)) {
+        groupedByDispatcher.set(page.dispatcherId, []);
+        dispatcherOrder.push(page.dispatcherId);
+      }
+      groupedByDispatcher.get(page.dispatcherId)?.push(page);
+    }
+
+    // Flatten in dispatcher first-seen order while preserving each group's upload order.
+    return dispatcherOrder.flatMap(
+      (dispatcherId) => groupedByDispatcher.get(dispatcherId) || []
+    );
+  };
+
+  // Handle one zip end-to-end so batch orchestration stays linear and readable.
+  const processZipFile = async (
+    zipFile: File,
+    index: number,
+    total: number
+  ): Promise<BatchPageEntry> => {
+    const formData = new FormData();
+    formData.append("file", zipFile);
+    setUploadProgress(`Processing ${zipFile.name} (${index + 1}/${total})...`);
+
+    const transcriptionResponse = await fetch("http://localhost:5001/api/transcribe", {
+      method: "POST",
+      body: formData,
+    });
+    const transcriptionResult = await transcriptionResponse.json();
+    const foldername = transcriptionResult.foldername;
+
+    setProgressPercentage(Math.round(((index + 0.5) / total) * 100));
+    setUploadProgress(`Grading ${zipFile.name} (${index + 1}/${total})...`);
+
+    const transcriptionDataResponse = await fetch(
+      `http://localhost:5001/api/transcriptions/${foldername}`
+    );
+    if (!transcriptionDataResponse.ok) {
+      throw new Error(
+        `Failed to fetch transcription: ${transcriptionDataResponse.statusText}`
+      );
+    }
+
+    const transcriptionData = await transcriptionDataResponse.json();
+    if (!transcriptionData.success) {
+      throw new Error("Failed to get transcription data");
+    }
+
+    const gradeResponse = await fetch("http://localhost:5001/api/grade", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(transcriptionData.data),
+    });
+    const gradeResult = await gradeResponse.json();
+
+    const transcriptFilename = `${foldername}.json`;
+    const dispatcherName = foldername.split("_")[2] || "Unknown";
+
+    const dispatchers = loadDispatchersFromStorage();
+    const dispatcher = upsertDispatcherWithGrade(
+      dispatchers,
+      dispatcherName,
+      foldername,
+      transcriptFilename,
+      gradeResult
+    );
+    saveDispatchersToStorage(dispatchers);
+
+    setProgressPercentage(Math.round(((index + 1) / total) * 100));
+    return {
+      dispatcherId: dispatcher.id,
+      transcriptFilename,
+      uploadOrder: index,
+    };
+  };
+
   const handleUpload = async () => {
     if (selectedFiles.length === 0) {
       alert("Please select at least one zip and json file to upload.");
@@ -93,125 +248,36 @@ const UploadFileContainer = () => {
       // ##################################################################################
       // ###############            ZIP FILE UPLOAD              ##########################
       // ##################################################################################
-      if (selectedFiles[0].name.endsWith(".zip")) {
-        const formData = new FormData();
-        formData.append("file", selectedFiles[0]);
-        console.log("Zip File");
-        // ##################################################################################
-        // ###############            TRANSCRIPTION              ##########################
-        // ##################################################################################
-        setUploadProgress("Transcribing audio...");
-        const transcriptionResponse = await fetch(
-          "http://localhost:5001/api/transcribe",
-          {
-            method: "POST",
-            body: formData,
-          }
-        );
-        const transcriptionResult = await transcriptionResponse.json();
-        console.log(transcriptionResult);
-        const foldername = transcriptionResult.foldername;
-
-        setProgressPercentage(50);
-        setUploadProgress("Transcription complete! Grading transcription...");
-
-        const transcriptionDataResponse = await fetch(
-          `http://localhost:5001/api/transcriptions/${foldername}`
-        );
-
-        if (!transcriptionDataResponse.ok) {
-          throw new Error(
-            `Failed to fetch transcription: ${transcriptionDataResponse.statusText}`
-          );
+      const zipFiles = getZipFiles(selectedFiles);
+      if (zipFiles.length > 0) {
+        const batchPages: BatchPageEntry[] = [];
+        for (const [index, zipFile] of zipFiles.entries()) {
+          batchPages.push(await processZipFile(zipFile, index, zipFiles.length));
         }
 
-        const transcriptionData = await transcriptionDataResponse.json();
+        const orderedBatchPages = orderBatchPages(batchPages);
 
-        if (!transcriptionData.success) {
-          throw new Error("Failed to get transcription data");
-        }
+        // Persist latest batch navigation context for dispatcher details paging.
+        localStorage.setItem(
+          "latestUploadBatch",
+          JSON.stringify({
+            createdAt: Date.now(),
+            pages: orderedBatchPages,
+          })
+        );
 
-        // ##################################################################################
-        // ###############            GRADING TRANSCRIPTION              ##########################
-        // ##################################################################################
-        setUploadProgress("Grading transcription... (This may take a while) ");
-
-        const gradeResponse = await fetch("http://localhost:5001/api/grade", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json", // Important: Set JSON content type
-          },
-          body: JSON.stringify(transcriptionData.data), // Send the transcript data directly
-        });
-        const gradeResult = await gradeResponse.json();
-        console.log(gradeResult);
-
-        setProgressPercentage(100);
+        window.dispatchEvent(new CustomEvent("dispatchersUpdated"));
         setUploadProgress("Grading complete!");
 
-        // ##################################################################################
-        // ###############            UPDATE LOCAL STORAGE              ##########################
-        // ##################################################################################
-        const transcriptFilename = `${foldername}.json`; // foldername from earlier transcription step
-        const dispatcherName = foldername.split("_")[2] || "Unknown"; // from YYYYMMDD_HHMMSS_dispatcher
-
-        // Create/update dispatcher in localStorage
-        const stored = localStorage.getItem("dispatchers");
-        const dispatchers = stored ? (JSON.parse(stored) as Dispatcher[]) : [];
-
-        let dispatcher = dispatchers.find((d) => d.name === dispatcherName);
-        if (!dispatcher) {
-          dispatcher = {
-            id: crypto.randomUUID(),
-            name: dispatcherName,
-            files: {
-              transcriptFiles: [],
-              audioFiles: [],
-            },
-            grades: {},
-          };
-          dispatchers.push(dispatcher);
-        }
-
-        // Record transcript file (avoid duplicates)
-        if (!dispatcher.files.transcriptFiles.includes(transcriptFilename)) {
-          dispatcher.files.transcriptFiles.push(transcriptFilename);
-        }
-
-        // Store FULL grade object the UI expects
-        const perQuestion =
-          gradeResult?.grades && typeof gradeResult.grades === "object"
-            ? Object.fromEntries(
-                Object.entries(gradeResult.grades).map(([qid, g]: any) => [
-                  qid,
-                  { code: g.code, label: g.label, status: g.status },
-                ])
-              )
-            : {};
-
-        if (!dispatcher.grades) {
-          dispatcher.grades = {};
-        }
-        dispatcher.grades[transcriptFilename] = {
-          grade_percentage: Math.round(gradeResult.grade_percentage ?? 0),
-          detected_nature_code: gradeResult.detected_nature_code,
-          per_question: perQuestion,
-        };
-
-        if (
-          foldername &&
-          !dispatcher.files.audioFiles.includes(`${foldername}.wav`)
-        ) {
-          dispatcher.files.audioFiles.push(`${foldername}.wav`);
-        }
-
-        localStorage.setItem("dispatchers", JSON.stringify(dispatchers));
-        window.dispatchEvent(new CustomEvent("dispatchersUpdated"));
-
+        const firstPage = orderedBatchPages[0];
         setTimeout(() => {
           setShowProgressModal(false);
-          router.push(`/records/${dispatcher.id}`);
+          if (firstPage) {
+            router.push(`/records/${firstPage.dispatcherId}?batch=1`);
+          }
         }, 1000);
+      } else {
+        throw new Error("No zip files selected for upload.");
       }
       // else {
       //   ////////////// JSON File Upload (OLD)
@@ -413,6 +479,7 @@ const UploadFileContainer = () => {
           error instanceof Error ? error.message : "Unknown error"
         }`
       );
+      setShowProgressModal(false);
     } finally {
       setIsUploading(false);
       setUploadProgress("");
