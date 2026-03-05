@@ -198,12 +198,20 @@ const DispatcherList = () => {
                       setSortDirection("asc");
                     }}
                   >
-                    Dispatcher{" "}
-                    {sortField === "name"
-                      ? sortDirection === "desc"
-                        ? "↓"
-                        : "↑"
-                      : ""}
+                    <span className="inline-flex items-center gap-1">
+                      <span>Dispatcher</span>
+                      <span
+                        className={
+                          sortField === "name" ? "font-extrabold" : "font-normal"
+                        }
+                      >
+                        {sortField === "name"
+                          ? sortDirection === "desc"
+                            ? "↓"
+                            : "↑"
+                          : "↕"}
+                      </span>
+                    </span>
                   </th>
                   <th
                     className="px-4 py-2 text-left text-sm font-medium cursor-pointer"
@@ -219,12 +227,22 @@ const DispatcherList = () => {
                       setSortDirection("desc");
                     }}
                   >
-                    Overall Grade{" "}
-                    {sortField === "grade"
-                      ? sortDirection === "desc"
-                        ? "↓"
-                        : "↑"
-                      : ""}
+                    <span className="inline-flex items-center gap-1">
+                      <span>Overall Grade</span>
+                      <span
+                        className={
+                          sortField === "grade"
+                            ? "font-extrabold"
+                            : "font-normal"
+                        }
+                      >
+                        {sortField === "grade"
+                          ? sortDirection === "desc"
+                            ? "↓"
+                            : "↑"
+                          : "↕"}
+                      </span>
+                    </span>
                   </th>
                   <th className="px-4 py-2 text-left text-sm font-medium">
                     Transcript Files
