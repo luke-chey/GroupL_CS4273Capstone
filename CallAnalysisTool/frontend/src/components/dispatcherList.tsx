@@ -12,10 +12,14 @@ import {
 } from "@/components/ui/card";
 import { seedDispatchers } from "@/utils/seedDispatchers";
 
+type SortField = "grade" | "name";
+type SortDirection = "desc" | "asc";
+
 const DispatcherList = () => {
   const [dispatchers, setDispatchers] = useState<Dispatcher[]>([]);
   const [searchQuery, setSearchQuery] = useState<string>("");
-  const [sortDescending, setSortDescending] = useState(true);
+  const [sortField, setSortField] = useState<SortField>("grade");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
 
   // load all dispatchers
   const loadDispatchers = () => {
@@ -72,13 +76,21 @@ const DispatcherList = () => {
     .sort(sortByGradeDescending)
     .slice(0, 3);
 
-  // sort dispatchers by overall grade
-  const sortedDispatchers = [...filteredDispatchers].sort((a, b) =>
-    sortDescending
-      ? b.overallGrade - a.overallGrade
-      : a.overallGrade - b.overallGrade
-  );
-  const otherDispatchers = sortedDispatchers.slice(3);
+  const sortedDispatchers = [...filteredDispatchers].sort((a, b) => {
+    if (sortField === "grade") {
+      if (a.overallGrade !== b.overallGrade) {
+        return sortDirection === "desc"
+          ? b.overallGrade - a.overallGrade
+          : a.overallGrade - b.overallGrade;
+      }
+
+      return compareByNameAsc(a, b);
+    }
+
+    return sortDirection === "asc"
+      ? compareByNameAsc(a, b)
+      : compareByNameAsc(b, a);
+  });
   const gradeRankById = new Map(
     [...filteredDispatchers]
       .sort(sortByGradeDescending)
@@ -160,9 +172,9 @@ const DispatcherList = () => {
         <h2 className="text-xl sm:text-2xl font-bold mb-4 text-center">
           All Dispatchers
         </h2>
-        {otherDispatchers.length === 0 ? (
+        {sortedDispatchers.length === 0 ? (
           <p className="text-gray-500 text-center">
-            No other dispatchers found.
+            No dispatchers found.
           </p>
         ) : (
           <div className="overflow-x-auto">
@@ -172,14 +184,47 @@ const DispatcherList = () => {
                   <th className="px-4 py-2 text-left text-sm font-medium">
                     Rank
                   </th>
-                  <th className="px-4 py-2 text-left text-sm font-medium">
-                    Dispatcher
+                  <th
+                    className="px-4 py-2 text-left text-sm font-medium cursor-pointer"
+                    onClick={() => {
+                      if (sortField === "name") {
+                        setSortDirection((prev) =>
+                          prev === "asc" ? "desc" : "asc"
+                        );
+                        return;
+                      }
+
+                      setSortField("name");
+                      setSortDirection("asc");
+                    }}
+                  >
+                    Dispatcher{" "}
+                    {sortField === "name"
+                      ? sortDirection === "desc"
+                        ? "↓"
+                        : "↑"
+                      : ""}
                   </th>
                   <th
                     className="px-4 py-2 text-left text-sm font-medium cursor-pointer"
-                    onClick={() => setSortDescending(!sortDescending)}
+                    onClick={() => {
+                      if (sortField === "grade") {
+                        setSortDirection((prev) =>
+                          prev === "desc" ? "asc" : "desc"
+                        );
+                        return;
+                      }
+
+                      setSortField("grade");
+                      setSortDirection("desc");
+                    }}
                   >
-                    Overall Grade {sortDescending ? "↓" : "↑"}
+                    Overall Grade{" "}
+                    {sortField === "grade"
+                      ? sortDirection === "desc"
+                        ? "↓"
+                        : "↑"
+                      : ""}
                   </th>
                   <th className="px-4 py-2 text-left text-sm font-medium">
                     Transcript Files
@@ -190,7 +235,7 @@ const DispatcherList = () => {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {otherDispatchers.map((dispatcher) => (
+                {sortedDispatchers.map((dispatcher) => (
                   <tr key={dispatcher.id} className="hover:bg-gray-50">
                     <td className="px-4 py-2 text-sm">
                       {gradeRankById.get(dispatcher.id)}
