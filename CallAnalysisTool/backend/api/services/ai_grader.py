@@ -18,7 +18,7 @@ sys.path.insert(0, str(backend_path))
 from JSONTranscriptionParser import json_to_text
 from AIGrader import (
     detect_nature_codes_in_memory,
-    extract_all_nature_codes,
+    identify_nature_code,
     load_nature_code_questions,
     ai_grade_transcript,
     calculate_final_grade
@@ -111,13 +111,13 @@ class AIGraderService:
             
             # Step 3: Extract and sort nature codes by confidence
             print("Step 3: Extracting nature codes...", flush=True)
-            nature_codes = extract_all_nature_codes(nature_codes_text)
-            if not nature_codes:
-                raise RuntimeError("No nature codes detected in transcript")
-            print(f"Step 3 complete: Found {len(nature_codes)} nature codes", flush=True)
+            nature_code = identify_nature_code(nature_codes_text, transcript_text)
+            if not nature_code:
+                raise RuntimeError(f"No nature code detected in transcript: {nature_code}")
+            print(f"Step 3 complete: Found nature code", flush=True)
             
             # Step 4: Get primary nature code (highest confidence)
-            primary_nature_code = nature_codes[0][0]
+            primary_nature_code = nature_code
             print(f"Step 4 complete: Primary nature code: {primary_nature_code}", flush=True)
             
             # Step 5: Load questions for Case Entry AND primary nature code
