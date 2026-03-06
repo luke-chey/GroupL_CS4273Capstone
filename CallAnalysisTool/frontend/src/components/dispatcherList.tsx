@@ -12,10 +12,14 @@ import {
 } from "@/components/ui/card";
 import { seedDispatchers } from "@/utils/seedDispatchers";
 
+type SortField = "grade" | "name";
+type SortDirection = "desc" | "asc";
+
 const DispatcherList = () => {
   const [dispatchers, setDispatchers] = useState<Dispatcher[]>([]);
   const [searchQuery, setSearchQuery] = useState<string>("");
-  const [sortDescending, setSortDescending] = useState(true);
+  const [sortField, setSortField] = useState<SortField>("grade");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
 
   // load all dispatchers
   const loadDispatchers = () => {
@@ -52,15 +56,46 @@ const DispatcherList = () => {
     d.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  // sort dispatchers by overall grade
-  const sortedDispatchers = [...filteredDispatchers].sort((a, b) =>
-    sortDescending
-      ? b.overallGrade - a.overallGrade
-      : a.overallGrade - b.overallGrade
-  );
+  const compareByNameAsc = (
+    a: Dispatcher & { overallGrade: number },
+    b: Dispatcher & { overallGrade: number }
+  ) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
 
-  const topDispatchers = sortedDispatchers.slice(0, 3);
-  const otherDispatchers = sortedDispatchers.slice(3);
+  const sortByGradeDescending = (
+    a: Dispatcher & { overallGrade: number },
+    b: Dispatcher & { overallGrade: number }
+  ) => {
+    if (b.overallGrade !== a.overallGrade) {
+      return b.overallGrade - a.overallGrade;
+    }
+
+    return compareByNameAsc(a, b);
+  };
+
+  const topDispatchers = [...dispatchersWithGrades]
+    .sort(sortByGradeDescending)
+    .slice(0, 3);
+
+  const sortedDispatchers = [...filteredDispatchers].sort((a, b) => {
+    if (sortField === "grade") {
+      if (a.overallGrade !== b.overallGrade) {
+        return sortDirection === "desc"
+          ? b.overallGrade - a.overallGrade
+          : a.overallGrade - b.overallGrade;
+      }
+
+      return compareByNameAsc(a, b);
+    }
+
+    return sortDirection === "asc"
+      ? compareByNameAsc(a, b)
+      : compareByNameAsc(b, a);
+  });
+  const gradeRankById = new Map(
+    [...filteredDispatchers]
+      .sort(sortByGradeDescending)
+      .map((dispatcher, index) => [dispatcher.id, index + 1] as const)
+  );
 
   // get grade color
   const gradeColor = (grade: number) =>
@@ -90,7 +125,7 @@ const DispatcherList = () => {
       )}
 
       {/* Top Dispatchers */}
-      {topDispatchers.length > 0 && (
+      {topDispatchers.length > 0 && searchQuery.trim().length === 0 && (
         <div className="mb-10">
           <h2 className="text-xl sm:text-2xl font-bold mb-4 text-center text-blue-600">
             Top Dispatchers
@@ -137,9 +172,9 @@ const DispatcherList = () => {
         <h2 className="text-xl sm:text-2xl font-bold mb-4 text-center">
           All Dispatchers
         </h2>
-        {otherDispatchers.length === 0 ? (
+        {sortedDispatchers.length === 0 ? (
           <p className="text-gray-500 text-center">
-            No other dispatchers found.
+            No dispatchers found.
           </p>
         ) : (
           <div className="overflow-x-auto">
@@ -149,14 +184,65 @@ const DispatcherList = () => {
                   <th className="px-4 py-2 text-left text-sm font-medium">
                     Rank
                   </th>
-                  <th className="px-4 py-2 text-left text-sm font-medium">
-                    Dispatcher
+                  <th
+                    className="px-4 py-2 text-left text-sm font-medium cursor-pointer"
+                    onClick={() => {
+                      if (sortField === "name") {
+                        setSortDirection((prev) =>
+                          prev === "asc" ? "desc" : "asc"
+                        );
+                        return;
+                      }
+
+                      setSortField("name");
+                      setSortDirection("asc");
+                    }}
+                  >
+                    <span className="inline-flex items-center gap-1">
+                      <span>Dispatcher</span>
+                      <span
+                        className={
+                          sortField === "name" ? "font-extrabold" : "font-normal"
+                        }
+                      >
+                        {sortField === "name"
+                          ? sortDirection === "desc"
+                            ? "↓"
+                            : "↑"
+                          : "↕"}
+                      </span>
+                    </span>
                   </th>
                   <th
                     className="px-4 py-2 text-left text-sm font-medium cursor-pointer"
-                    onClick={() => setSortDescending(!sortDescending)}
+                    onClick={() => {
+                      if (sortField === "grade") {
+                        setSortDirection((prev) =>
+                          prev === "desc" ? "asc" : "desc"
+                        );
+                        return;
+                      }
+
+                      setSortField("grade");
+                      setSortDirection("desc");
+                    }}
                   >
-                    Overall Grade {sortDescending ? "↓" : "↑"}
+                    <span className="inline-flex items-center gap-1">
+                      <span>Overall Grade</span>
+                      <span
+                        className={
+                          sortField === "grade"
+                            ? "font-extrabold"
+                            : "font-normal"
+                        }
+                      >
+                        {sortField === "grade"
+                          ? sortDirection === "desc"
+                            ? "↓"
+                            : "↑"
+                          : "↕"}
+                      </span>
+                    </span>
                   </th>
                   <th className="px-4 py-2 text-left text-sm font-medium">
                     Transcript Files
@@ -167,9 +253,11 @@ const DispatcherList = () => {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {otherDispatchers.map((dispatcher, index) => (
+                {sortedDispatchers.map((dispatcher) => (
                   <tr key={dispatcher.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-2 text-sm">{index + 4}</td>
+                    <td className="px-4 py-2 text-sm">
+                      {gradeRankById.get(dispatcher.id)}
+                    </td>
                     <td className="px-4 py-2 text-sm">
                       <Link
                         href={`/records/${dispatcher.id}`}
