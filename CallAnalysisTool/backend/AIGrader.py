@@ -128,26 +128,53 @@ def detect_nature_codes_in_memory(transcript_path, transcript_text):
 
 # Input: nature codes text
 # Output: array of nature code from most to least confident
-def extract_all_nature_codes(text):
-    nature_codes = []
-    lines = text.strip().split('\n')
+def identify_nature_code(text, transcript):
+    if not _ollama_initialized:
+        try:
+            initialize_ollama()
+        except Exception as e:
+            print(f"Failed to initialize Ollama for identifying the nature code: {e}")
+            raise RuntimeError("Ollama initialization failed. Cannot perform nature code identification.")
+        
+    prompt = f"""You are a 911 call quality assurance analyst. The data provided are 'nature codes' and a 'transcript'. You need to parse the transcript and determine the nature code based on the conversation between the dispatcher and caller.
     
-    for i, line in enumerate(lines):
-        if line.strip().startswith('- '):
-            nature_code = line.strip()[2:].split(' (')[0]
+    NATURE CODES:
+    {text}
+
+    TRANSCRIPT:
+    {transcript}
+
+    Return ONLY the nature code you have identified based on the transcript and ONLY the nature code, don't give me your reasoning.
+
+    Important: Be accurate and return a valid string only."""
+
+    try:
+        # Add timeout and optimize generation parameters for faster response
+        response = ollama.generate(
+            model='llama3.1:8b',
+            prompt=prompt,
+            options={
+                'temperature': 0.1,  # Lower temperature for more consistent responses
+                'top_p': 0.9,        # Slightly more focused responses
+                'num_predict': 500,  # Limit response length
+                'timeout': 120,       # 2 minute timeout
+                'seed': 42,
+                'num_gpu': 0,
+                'top_k': 0.9
+            }
+        )
+        import json
+        import re
+        
+        if response:
+            return response['response']
+        else:
+            print("Could not parse AI response")
+            return {}
             
-            if i + 2 < len(lines):
-                confidence_line = lines[i + 2].strip()
-                if confidence_line.startswith('Confidence:'):
-                    try:
-                        confidence = float(confidence_line.split(': ')[1])
-                        nature_codes.append((nature_code, confidence))
-                    except (IndexError, ValueError):
-                        continue
-    
-    # Sort by confidence (highest first)
-    nature_codes.sort(key=lambda x: x[1], reverse=True)
-    return nature_codes
+    except Exception as e:
+        print(f"Nature code identification failed: {e}")
+        return {}
 
 # Function for loading specific nature code questions
 
@@ -333,7 +360,7 @@ def main():
         print(f"Error: Could not determine nature codes")
         sys.exit(1)
 
-    nature_codes = extract_all_nature_codes(nature_codes_text)
+    nature_codes = identify_nature_code(nature_codes_text, transcript)
 
     # Grade based on nature code with highest confidence
     primary_nature_code = nature_codes[0][0]
