@@ -23,6 +23,7 @@ testCoverageC
 # Editors/IDEs
 .vscode/
 .idea/
+.vs/
 
 # Processed files
 CallAnalysisTool/backend/output/
@@ -32,3 +33,5 @@ CallAnalysisTool/test_data/
 
 # Docker exports
 CallAnalysisTool/offline_backup/
+
+.VSCodeCounter/

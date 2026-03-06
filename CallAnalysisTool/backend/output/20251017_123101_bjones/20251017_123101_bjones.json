@@ -1,7 +1,7 @@
 {
   "date": 20251017,
   "time": 123101,
-  "total_segments": 20,
+  "total_segments": 19,
   "speakers": [
     "bjones",
     "caller"
@@ -20,7 +20,7 @@
       "text": "Hi, this is Devin."
     },
     {
-      "speaker": "caller",
+      "speaker": "bjones",
       "start": 6.652,
       "end": 10.175,
       "text": "I'm calling from the Norman Regional Stat Urgent Care here on Porter."
@@ -68,15 +68,15 @@
       "text": "Sir, how old are you?"
     },
     {
-      "speaker": "caller",
+      "speaker": "bjones",
       "start": 30.895,
-      "end": 31.376,
-      "text": "Thirty-four."
+      "end": 31.155,
+      "text": "34."
     },
     {
-      "speaker": "bjones",
-      "start": 31.456,
-      "end": 36.763,
+      "speaker": "caller",
+      "start": 31.276,
+      "end": 31.436,
       "text": "Okay."
     },
     {
@@ -104,12 +104,6 @@
       "text": "Thank you."
     },
     {
-      "speaker": "caller",
-      "start": 42.411,
-      "end": 42.612,
-      "text": "Uh-huh."
-    },
-    {
       "speaker": "bjones",
       "start": 43.293,
       "end": 43.413,
@@ -125,7 +119,7 @@
       "speaker": "bjones",
       "start": 48.219,
       "end": 50.743,
-      "text": "Ladder one, instead of 11, stand by for tone."
+      "text": "Ladder 1 and stud 11, stand by for tone."
     }
   ]
 }
