@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Dispatcher } from "@/types/dispatcher";
 import DispatcherDetails from "@/components/dispatcherDetails";
@@ -8,6 +8,9 @@ import DispatcherDetails from "@/components/dispatcherDetails";
 export default function DispatcherDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  // Batch mode is opt-in via upload redirect (`?batch=1`).
+  const batchMode = searchParams.get("batch") === "1";
   const [dispatcher, setDispatcher] = useState<Dispatcher | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -76,5 +79,5 @@ export default function DispatcherDetailPage() {
     );
   }
 
-  return <DispatcherDetails dispatcher={dispatcher} />;
+  return <DispatcherDetails dispatcher={dispatcher} batchMode={batchMode} />;
 }
