@@ -1,6 +1,6 @@
 "use client";
 import styles from "./TranscriptPlayer.module.css";
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useState } from "react";
 
 interface TranscriptSegment {
   speaker?: string;
@@ -14,8 +14,13 @@ interface TranscriptData {
 }
 
 interface TranscriptPlayerProps {
-  transcriptData?: TranscriptData | string;
+  transcriptData?: TranscriptData | string | null;
   currentTime: number;
+  onEditSegment?: (
+    index: number,
+    speaker: string,
+    text: string
+  ) => void;
 }
 
 interface Message {
@@ -29,9 +34,14 @@ interface Message {
 function TranscriptPlayer({
   transcriptData,
   currentTime,
+  onEditSegment,
 }: TranscriptPlayerProps) {
   // references
   const chatBoxRef = useRef<HTMLDivElement>(null);
+
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [editSpeaker, setEditSpeaker] = useState("");
+  const [editText, setEditText] = useState("");
 
   // converts json into message
   const segments = (transcriptData as TranscriptData)?.segments ?? [];
@@ -44,6 +54,24 @@ function TranscriptPlayer({
       end: segment.end,
     })
   );
+
+  const startEdit = (id: number, speaker: string, text: string) => {
+  setEditingIndex(id);
+  setEditSpeaker(speaker);
+  setEditText(text);
+};
+
+const cancelEdit = () => {
+  setEditingIndex(null);
+  setEditSpeaker("");
+  setEditText("");
+};
+
+const saveEdit = () => {
+  if (editingIndex === null) return;
+  onEditSegment?.(editingIndex, editSpeaker, editText);
+  cancelEdit();
+};
 
   // finds active message based on current time
   let activeIndex = messages.findIndex(

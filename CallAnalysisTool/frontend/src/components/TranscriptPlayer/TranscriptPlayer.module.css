@@ -86,3 +86,55 @@
   font-weight: bold;
   margin-bottom: 4px;
 }
+
+.editButton {
+  margin-top: 8px;
+  font-size: 12px;
+  padding: 4px 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: white;
+  cursor: pointer;
+}
+
+.editButton:hover {
+  background: #f8fafc;
+}
+
+.editSelect {
+  width: 100%;
+  margin-bottom: 8px;
+  padding: 6px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+}
+
+.editTextarea {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  resize: vertical;
+  font-size: 14px;
+  box-sizing: border-box;
+}
+
+.editActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.saveButton,
+.cancelButton {
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid #cbd5e1;
+  cursor: pointer;
+  background: white;
+}
+
+.saveButton:hover,
+.cancelButton:hover {
+  background: #f8fafc;
+}

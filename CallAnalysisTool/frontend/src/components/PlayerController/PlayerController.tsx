@@ -8,13 +8,25 @@ interface PlayerControllerProps {
   transcriptionId?: string;
 }
 
+interface TranscriptSegment {
+  speaker?: string;
+  text?: string;
+  start: number;
+  end: number;
+}
+
+interface TranscriptData {
+  segments?: TranscriptSegment[];
+  audio_file?: string;
+}
+
 export default function PlayerController({
   transcriptionId,
 }: PlayerControllerProps) {
   // states
   const [fileName, setFileName] = useState("N/A");
   const [fileURL, setFileURL] = useState<string | null>(null);
-  const [transcription, setTranscription] = useState("");
+  const [transcription, setTranscription] = useState<TranscriptData | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [transcriptionLoaded, setTranscriptionLoaded] = useState(false);
 
@@ -23,7 +35,7 @@ export default function PlayerController({
     if (transcriptionId) {
       // Reset state when loading new transcription
       setTranscriptionLoaded(false);
-      setTranscription("");
+      setTranscription(null);
 
       // Fetch transcription from the backend API
       fetch(`http://localhost:5001/api/transcriptions/${transcriptionId}`)
@@ -121,6 +133,27 @@ export default function PlayerController({
       });
   }, [fileName, transcriptionLoaded]); // Added transcriptionLoaded to dependencies
 
+  const handleEditSegment = (
+  index: number,
+  updatedSpeaker: string,
+  updatedText: string
+) => {
+  setTranscription((prev) => {
+    if (!prev?.segments) return prev;
+
+    const updatedSegments = [...prev.segments];
+    updatedSegments[index] = {
+      ...updatedSegments[index],
+      speaker: updatedSpeaker,
+      text: updatedText,
+    };
+
+    return {
+      ...prev,
+      segments: updatedSegments,
+    };
+  });
+};
   return (
     <>
       <div className={styles.presentation_header}>
@@ -134,8 +167,9 @@ export default function PlayerController({
         </p>
       </div>
       <TranscriptPlayer
-        transcriptData={transcription}
-        currentTime={currentTime}
+      transcriptData={transcription}
+      currentTime={currentTime}
+      onEditSegment={handleEditSegment}
       />
       <AudioPlayer path={fileURL || undefined} onProgress={setCurrentTime} />
     </>
