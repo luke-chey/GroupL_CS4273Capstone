@@ -14,8 +14,15 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Set fixed nltk data directory
-ENV NLTK_DATA=/usr/local/share/nltk_data
+# Arguments for environment variables
+ARG NLTK_DATA=/usr/local/share/nltk_data
+ARG DOCKER_CONTAINER=true
+ARG OLLAMA_HOST=http://ollama:11434/
+ARG FLASK_ENV=production
+ARG PORT=5001
+
+# Set environment variables
+ENV NLTK_DATA=${NLTK_DATA}
 # Create directory
 RUN mkdir -p /usr/local/share/nltk_data
 # Download punkt into that directory at build time
@@ -24,10 +31,10 @@ RUN python -m nltk.downloader -d /usr/local/share/nltk_data punkt_tab
 # Copy application code
 COPY . .
 
-ENV DOCKER_CONTAINER=true
-ENV OLLAMA_HOST=http://ollama:11434/
-ENV FLASK_ENV=production
-ENV PORT=5001
+ENV DOCKER_CONTAINER=${DOCKER_CONTAINER}
+ENV OLLAMA_HOST=${OLLAMA_HOST}
+ENV FLASK_ENV=${FLASK_ENV}
+ENV PORT=${PORT}
 
 EXPOSE 5001
 
