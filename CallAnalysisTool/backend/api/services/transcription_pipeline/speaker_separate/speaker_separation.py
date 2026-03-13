@@ -1,28 +1,9 @@
-"""
-USAGE:
-    python3 speaker_separation.py <audio_file.wav> <transcription.json>
-
-    (python3 might not be necessary if running in a virtual environment)
-
-    Arguments:
-        audio_file.wav     - WAV audio file of emergency call
-        transcription.json - WhisperX transcription JSON output with naming convention: YYYYMMDD_HHMMSS_dispatchername.json
-
-    Output:
-        Creates <audio_basename>.json in the same directory as the input JSON file
-        Output format includes date, time, dispatcher name extracted from input filename
-
-REQUIREMENTS:
-    - Python 3.7+
-    - whisperx
-    - torch
-"""
 import json
 import os
-import sys
 import whisperx
 import torch
 import gc
+from whisperx.diarize import DiarizationPipeline
 
 def extract_dispatcher_name(basename):
     """
@@ -101,9 +82,6 @@ def speaker_separation(audio_file, transcription_file, output_dir):
         raise FileNotFoundError("Audio file or transcription file not found")
 
     DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-    COMPUTE_TYPE = "float16" if DEVICE == "cuda" else "int8"
-    BATCH_SIZE = 8
-    HF_TOKEN = os.getenv('HF_TOKEN')
 
     audio = whisperx.load_audio(audio_file)
 
@@ -111,6 +89,7 @@ def speaker_separation(audio_file, transcription_file, output_dir):
         data = json.load(f)
     result = {'segments': data['segments'], 'language': 'en'}
 
+    print("Aligning audio")
     align_model, metadata = whisperx.load_align_model(language_code=result["language"], device=DEVICE)
     result = whisperx.align(result["segments"], align_model, metadata, audio, DEVICE, return_char_alignments=False)
 
@@ -119,8 +98,9 @@ def speaker_separation(audio_file, transcription_file, output_dir):
     if DEVICE == "cuda":
         torch.cuda.empty_cache()
 
-    from whisperx.diarize import DiarizationPipeline
-    diarize_model = DiarizationPipeline(token=HF_TOKEN, device=DEVICE)
+    # Diarizing audio
+    print("Diarizing audio")
+    diarize_model = DiarizationPipeline(use_auth_token=os.getenv('HF_TOKEN'), device=DEVICE)
     diarize_segments = diarize_model(audio, min_speakers=2, max_speakers=2)
     result = whisperx.assign_word_speakers(diarize_segments, result)
 
@@ -166,73 +146,8 @@ def speaker_separation(audio_file, transcription_file, output_dir):
 
 
 def main():
-    if len(sys.argv) < 3:
-        print("Usage: python3 speaker_separation.py <audio_file> <json_file>")
-        return
-
-    audio_file, json_file = sys.argv[1], sys.argv[2]
-    if not os.path.exists(audio_file) or not os.path.exists(json_file):
-        print("Error: File not found")
-        return
-
-    DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-    COMPUTE_TYPE = "float16" if DEVICE == "cuda" else "int8"
-    BATCH_SIZE = 8
-    HF_TOKEN = os.getenv('HF_TOKEN')
-
-    audio = whisperx.load_audio(audio_file)
-
-    with open(json_file, 'r', encoding='utf-8') as f:
-        data = json.load(f)
-    result = {'segments': data['segments'], 'language': 'en'}
-
-    align_model, metadata = whisperx.load_align_model(language_code=result["language"], device=DEVICE)
-    result = whisperx.align(result["segments"], align_model, metadata, audio, DEVICE, return_char_alignments=False)
-
-    del align_model
-    gc.collect()
-    if DEVICE == "cuda":
-        torch.cuda.empty_cache()
-
-    from whisperx.diarize import DiarizationPipeline
-    diarize_model = DiarizationPipeline(token=HF_TOKEN, device=DEVICE)
-    diarize_segments = diarize_model(audio, min_speakers=2, max_speakers=2)
-    result = whisperx.assign_word_speakers(diarize_segments, result)
-
-    del diarize_model
-    gc.collect()
-    if DEVICE == "cuda":
-        torch.cuda.empty_cache()
-
-    # Classify dispatcher based on questions
-    speakers = set(seg.get('speaker', 'Unknown') for seg in result['segments'] if seg.get('speaker') != 'Unknown')
-    if not speakers:
-        speaker_segments = {'dispatcher': [], 'caller': []}
-    else:
-        speaker_texts = {spk: [seg['text'] for seg in result['segments'] if seg.get('speaker') == spk] for spk in speakers}
-        questions = {spk: sum(1 for text in texts if '?' in text) for spk, texts in speaker_texts.items()}
-        dispatcher_speaker = max(questions, key=questions.get) if questions else list(speakers)[0]
-
-        for seg in result['segments']:
-            spk = seg.get('speaker', 'Unknown')
-            if spk == dispatcher_speaker:
-                seg['_predicted_speaker'] = 'dispatcher'
-            else:
-                seg['_predicted_speaker'] = 'caller'
-
-        # Move long questions from caller to dispatcher
-        for seg in result['segments']:
-            if seg.get('_predicted_speaker') == 'caller' and '?' in seg['text']:
-                word_count = len(seg['text'].split())
-                if word_count >= 3:
-                    seg['_predicted_speaker'] = 'dispatcher'
-
-        speaker_segments = {
-            'dispatcher': [seg for seg in result['segments'] if seg.get('_predicted_speaker') == 'dispatcher'],
-            'caller': [seg for seg in result['segments'] if seg.get('_predicted_speaker') == 'caller']
-        }
-
-    create_combined_transcript(speaker_segments, os.path.splitext(os.path.basename(audio_file))[0], json_file)
+    # We don't need a main method unless we intend to test via the CLI
+    print("speaker_separation.main() called")
 
 if __name__ == "__main__":
     main()

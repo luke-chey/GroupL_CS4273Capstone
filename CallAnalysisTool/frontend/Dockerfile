@@ -13,9 +13,14 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# Build argument for API URL
+# Arguments for environment variables
 ARG NEXT_PUBLIC_API_URL=http://localhost:5001
-ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+ARG NODE_ENV=production
+ARG PORT=3000
+
+ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+ENV NODE_ENV=${NODE_ENV}
+ENV PORT=${PORT}
 
 # Build Next.js app
 RUN npm run build
@@ -24,7 +29,7 @@ RUN npm run build
 FROM base AS runner
 WORKDIR /app
 
-ENV NODE_ENV=production
+ENV NODE_ENV=${NODE_ENV}
 
 # Copy built application
 COPY --from=builder /app/public ./public
@@ -34,6 +39,6 @@ COPY --from=builder /app/.next/static ./.next/static
 
 EXPOSE 3000
 
-ENV PORT=3000
+ENV PORT=${PORT}
 
 CMD ["node", "server.js"]

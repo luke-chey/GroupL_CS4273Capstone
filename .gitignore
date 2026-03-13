@@ -2,7 +2,6 @@
 __pycache__/
 *.pyc
 *.pyo
-.env
 .venv
 venv/
 
@@ -32,6 +31,10 @@ CallAnalysisTool/backend/output/
 CallAnalysisTool/test_data/
 
 # Docker exports
-CallAnalysisTool/offline_backup/
+CallAnalysisTool/offline_backup*/
 
+# Environmental variables (confidential)
+.env
+
+# Other
 .VSCodeCounter/
