@@ -1,20 +1,14 @@
-env_file:
-  - ../.env
-
 services:
   frontend:
     image: callanalysistool-frontend:latest
     build:
       context: ./frontend
       args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
         NODE_ENV: ${NODE_ENV}
         PORT: ${PORT_FRONTEND}
     restart: unless-stopped
     ports:
       - 3000:3000
-    environment:
-      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 
   ollama:
     image: callanalysistool-ollama:latest
