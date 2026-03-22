@@ -16,7 +16,7 @@ switch ($currentDir) {
 }
 
 # Load environment variables from .env file
-$envFile = "../../.env"
+$envFile = "../.env"
 if (Test-Path $envFile) {
     Get-Content $envFile | ForEach-Object {
         if ($_ -match '^([^#][^=]+)=(.*)$') {
