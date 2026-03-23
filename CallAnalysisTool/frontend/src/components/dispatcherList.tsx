@@ -10,7 +10,6 @@ import {
   CardDescription,
   CardContent,
 } from "@/components/ui/card";
-import { seedDispatchers } from "@/utils/seedDispatchers";
 
 type SortField = "grade" | "name";
 type SortDirection = "desc" | "asc";
@@ -21,35 +20,47 @@ const DispatcherList = () => {
   const [sortField, setSortField] = useState<SortField>("grade");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
 
-  // load all dispatchers
-  const loadDispatchers = () => {
-    seedDispatchers(); // ensure seed exists
-    const storedDispatchers: Dispatcher[] =
-      JSON.parse(localStorage.getItem("dispatchers") || "[]") || [];
-    setDispatchers(storedDispatchers);
+  // load all dispatchers from backend
+  const loadDispatchers = async () => {
+    try {
+      const res = await fetch("http://localhost:5001/api/dispatchers");
+      if (!res.ok) {
+        throw new Error(`Unable to load dispatchers: ${res.status} ${res.statusText}`);
+      }
+
+      const data = await res.json();
+      const backendDispatchers: any[] = data?.dispatchers || [];
+
+      const normalized = backendDispatchers.map((d, index) => ({
+        id: d.name || `${index}`,
+        name: d.name || "Unknown",
+        overallGrade: typeof d.overallGrade === "number" ? d.overallGrade : 0,
+        numRecords: d.numRecords || 0,
+        numTranscripts: d.numTranscripts || 0,
+        numGrades: d.numGrades || 0,
+        files: {
+          transcriptFiles: [],
+          audioFiles: [],
+        },
+        grades: {},
+      })) as Dispatcher[];
+
+      setDispatchers(normalized);
+    } catch (error) {
+      console.error("Error loading dispatchers:", error);
+      setDispatchers([]);
+    }
   };
 
   useEffect(() => {
     loadDispatchers();
-    const handleUpdate = () => loadDispatchers();
-    window.addEventListener("dispatchersUpdated", handleUpdate);
-    return () => window.removeEventListener("dispatchersUpdated", handleUpdate);
   }, []);
 
-  // Compute overall grade
-  const dispatchersWithGrades = dispatchers.map((dispatcher) => {
-    const transcriptFiles = dispatcher.files?.transcriptFiles || [];
-    const grades = dispatcher.grades || {};
-    const gradedFiles = transcriptFiles.filter((file) => grades[file]);
-    const overallGrade =
-      gradedFiles.length > 0
-        ? gradedFiles.reduce(
-            (sum, file) => sum + grades[file].grade_percentage,
-            0
-          ) / gradedFiles.length
-        : 0;
-    return { ...dispatcher, overallGrade };
-  });
+  // Keep backend-reported grade as source of truth
+  const dispatchersWithGrades = dispatchers.map((dispatcher) => ({
+    ...dispatcher,
+    overallGrade: typeof dispatcher.overallGrade === "number" ? dispatcher.overallGrade : 0,
+  }));
 
   //  search implemented
   const filteredDispatchers = dispatchersWithGrades.filter((d) =>
@@ -154,10 +165,8 @@ const DispatcherList = () => {
                       Overall Grade: {dispatcher.overallGrade.toFixed(1)}%
                     </p>
                     <div className="flex justify-between mt-2 text-xs text-gray-600">
-                      <span>
-                        Transcript: {dispatcher.files.transcriptFiles.length}
-                      </span>
-                      <span>Audio: {dispatcher.files.audioFiles.length}</span>
+                      <span>Records: {dispatcher.numRecords ?? 0}</span>
+                      <span>Grades: {dispatcher.numGrades ?? 0}</span>
                     </div>
                   </CardContent>
                 </Card>
@@ -245,10 +254,10 @@ const DispatcherList = () => {
                     </span>
                   </th>
                   <th className="px-4 py-2 text-left text-sm font-medium">
-                    Transcript Files
+                    Call Records
                   </th>
                   <th className="px-4 py-2 text-left text-sm font-medium">
-                    Audio Files
+                    Grades
                   </th>
                 </tr>
               </thead>
@@ -260,7 +269,7 @@ const DispatcherList = () => {
                     </td>
                     <td className="px-4 py-2 text-sm">
                       <Link
-                        href={`/records/${dispatcher.id}`}
+                        href={`/records/${dispatcher.name}`}
                         className="text-blue-600 hover:underline"
                       >
                         {dispatcher.name}
@@ -274,10 +283,10 @@ const DispatcherList = () => {
                       {dispatcher.overallGrade.toFixed(1)}%
                     </td>
                     <td className="px-4 py-2 text-sm">
-                      {dispatcher.files.transcriptFiles.length}
+                      {dispatcher.numRecords ?? 0}
                     </td>
                     <td className="px-4 py-2 text-sm">
-                      {dispatcher.files.audioFiles.length}
+                      {dispatcher.numGrades ?? 0}
                     </td>
                   </tr>
                 ))}

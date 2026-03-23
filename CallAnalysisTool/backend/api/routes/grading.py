@@ -185,144 +185,144 @@ def grade_ai():
     return grade_transcript()  # Use the main AI grading endpoint
 
 
-@grading_bp.route('/upload', methods=['POST'])
-def upload_and_grade():
-    """
-    Accept file upload and grade transcript
+# @grading_bp.route('/upload', methods=['POST'])
+# def upload_and_grade():
+#     """
+#     Accept file upload and grade transcript
     
-    For Camden's frontend: Upload .json transcript file, get grading results
+#     For Camden's frontend: Upload .json transcript file, get grading results
     
-    Request: multipart/form-data with 'file' field
-    Response: Same format as /api/grade
-    """
-    try:
-        # Check if file is present
-        if 'file' not in request.files:
-            return jsonify({'error': 'No file provided'}), 400
+#     Request: multipart/form-data with 'file' field
+#     Response: Same format as /api/grade
+#     """
+#     try:
+#         # Check if file is present
+#         if 'file' not in request.files:
+#             return jsonify({'error': 'No file provided'}), 400
         
-        file = request.files['file']
+#         file = request.files['file']
         
-        # Check if filename is empty
-        if file.filename == '':
-            return jsonify({'error': 'No file selected'}), 400
+#         # Check if filename is empty
+#         if file.filename == '':
+#             return jsonify({'error': 'No file selected'}), 400
         
-        # Validate file extension
-        if not allowed_file(file.filename):
-            return jsonify({
-                'error': 'Invalid file type',
-                'message': 'Only .json files are supported',
-                'allowed_types': ['.json']
-            }), 400
+#         # Validate file extension
+#         if not allowed_file(file.filename):
+#             return jsonify({
+#                 'error': 'Invalid file type',
+#                 'message': 'Only .json files are supported',
+#                 'allowed_types': ['.json']
+#             }), 400
         
-        # Create secure filename
-        filename = secure_filename(file.filename)
+#         # Create secure filename
+#         filename = secure_filename(file.filename)
         
-        # Save to temporary directory
-        with tempfile.NamedTemporaryFile(mode='wb', suffix='.json', delete=False) as tmp_file:
-            file.save(tmp_file.name)
-            temp_path = tmp_file.name
+#         # Save to temporary directory
+#         with tempfile.NamedTemporaryFile(mode='wb', suffix='.json', delete=False) as tmp_file:
+#             file.save(tmp_file.name)
+#             temp_path = tmp_file.name
         
-        try:
-            # Read the JSON file
-            import json
-            with open(temp_path, 'r') as f:
-                transcript_data = json.load(f)
+#         try:
+#             # Read the JSON file
+#             import json
+#             with open(temp_path, 'r') as f:
+#                 transcript_data = json.load(f)
             
-            # Validate JSON structure
-            if 'segments' not in transcript_data:
-                return jsonify({'error': 'Invalid transcript format: missing "segments" field'}), 400
+#             # Validate JSON structure
+#             if 'segments' not in transcript_data:
+#                 return jsonify({'error': 'Invalid transcript format: missing "segments" field'}), 400
             
-            # Initialize AI grader
-            ai_grader = AIGraderService()
+#             # Initialize AI grader
+#             ai_grader = AIGraderService()
             
-            # Grade the transcript using AI with nature code detection
-            grades, primary_nature_code, questions = ai_grader.grade_transcript(
-                transcript_data, 
-                show_evidence=False
-            )
+#             # Grade the transcript using AI with nature code detection
+#             grades, primary_nature_code, questions = ai_grader.grade_transcript(
+#                 transcript_data, 
+#                 show_evidence=False
+#             )
             
-            # Calculate percentage score
-            percentage = ai_grader.calculate_percentage(grades, questions)
+#             # Calculate percentage score
+#             percentage = ai_grader.calculate_percentage(grades, questions)
             
-            # Count questions by type
-            total_questions = len(grades)
-            case_entry_count = sum(1 for q_id in grades.keys() if q_id.startswith('CE_'))
-            nature_code_count = sum(1 for q_id in grades.keys() if q_id.startswith('NC_'))
+#             # Count questions by type
+#             total_questions = len(grades)
+#             case_entry_count = sum(1 for q_id in grades.keys() if q_id.startswith('CE_'))
+#             nature_code_count = sum(1 for q_id in grades.keys() if q_id.startswith('NC_'))
             
-            questions_asked_correctly = sum(
-                1 for g in grades.values() if g.get('code') in ['1', '6']
-            )
-            questions_missed = total_questions - questions_asked_correctly
+#             questions_asked_correctly = sum(
+#                 1 for g in grades.values() if g.get('code') in ['1', '6']
+#             )
+#             questions_missed = total_questions - questions_asked_correctly
             
-            # Build response
-            response = {
-                'filename': filename,
-                'grader_type': 'ai',
-                'grade_percentage': percentage,
-                'detected_nature_code': primary_nature_code,
-                'total_questions': total_questions,
-                'case_entry_questions': case_entry_count,
-                'nature_code_questions': nature_code_count,
-                'questions_asked_correctly': questions_asked_correctly,
-                'questions_missed': questions_missed,
-                'timestamp': datetime.utcnow().isoformat() + 'Z',
-                'grades': grades,
-                'metadata': {
-                    'language': transcript_data.get('language', 'unknown'),
-                    'segment_count': len(transcript_data.get('segments', [])),
-                    'grader_version': '2.0.0',
-                    'model': 'llama3.1:8b',
-                    'questions_source': f'EMSQA.csv (Case Entry + {primary_nature_code})',
-                    'nature_code_detection': 'keyword + embedding model'
-                }
-            }
+#             # Build response
+#             response = {
+#                 'filename': filename,
+#                 'grader_type': 'ai',
+#                 'grade_percentage': percentage,
+#                 'detected_nature_code': primary_nature_code,
+#                 'total_questions': total_questions,
+#                 'case_entry_questions': case_entry_count,
+#                 'nature_code_questions': nature_code_count,
+#                 'questions_asked_correctly': questions_asked_correctly,
+#                 'questions_missed': questions_missed,
+#                 'timestamp': datetime.utcnow().isoformat() + 'Z',
+#                 'grades': grades,
+#                 'metadata': {
+#                     'language': transcript_data.get('language', 'unknown'),
+#                     'segment_count': len(transcript_data.get('segments', [])),
+#                     'grader_version': '2.0.0',
+#                     'model': 'llama3.1:8b',
+#                     'questions_source': f'EMSQA.csv (Case Entry + {primary_nature_code})',
+#                     'nature_code_detection': 'keyword + embedding model'
+#                 }
+#             }
             
-            return jsonify(response), 200
+#             return jsonify(response), 200
         
-        finally:
-            # Clean up temporary file
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
+#         finally:
+#             # Clean up temporary file
+#             if os.path.exists(temp_path):
+#                 os.remove(temp_path)
     
-    except json.JSONDecodeError as e:
-        return jsonify({
-            'error': 'Invalid JSON file',
-            'message': str(e)
-        }), 400
+#     except json.JSONDecodeError as e:
+#         return jsonify({
+#             'error': 'Invalid JSON file',
+#             'message': str(e)
+#         }), 400
     
-    except ConnectionError as e:
-        return jsonify({
-            'error': 'Ollama connection failed',
-            'message': 'Please ensure Ollama is installed and running (ollama serve)',
-            'details': str(e)
-        }), 503
+#     except ConnectionError as e:
+#         return jsonify({
+#             'error': 'Ollama connection failed',
+#             'message': 'Please ensure Ollama is installed and running (ollama serve)',
+#             'details': str(e)
+#         }), 503
     
-    except ValueError as e:
-        return jsonify({
-            'error': 'Invalid transcript data',
-            'message': str(e)
-        }), 400
+#     except ValueError as e:
+#         return jsonify({
+#             'error': 'Invalid transcript data',
+#             'message': str(e)
+#         }), 400
     
-    except RuntimeError as e:
-        error_msg = str(e)
-        if "empty response from Ollama" in error_msg:
-            return jsonify({
-                'error': 'AI grading timeout',
-                'message': 'AI grading took too long to complete. The model is working but processing is slow.',
-                'suggestion': 'Try with a shorter transcript or wait for the model to warm up.',
-                'estimated_time': '2-3 minutes'
-            }), 408  # Request Timeout
-        else:
-            return jsonify({
-                'error': 'AI grading failed',
-                'message': error_msg,
-                'suggestion': 'Check if llama3.1:8b model is loaded and Ollama is running'
-            }), 500
+#     except RuntimeError as e:
+#         error_msg = str(e)
+#         if "empty response from Ollama" in error_msg:
+#             return jsonify({
+#                 'error': 'AI grading timeout',
+#                 'message': 'AI grading took too long to complete. The model is working but processing is slow.',
+#                 'suggestion': 'Try with a shorter transcript or wait for the model to warm up.',
+#                 'estimated_time': '2-3 minutes'
+#             }), 408  # Request Timeout
+#         else:
+#             return jsonify({
+#                 'error': 'AI grading failed',
+#                 'message': error_msg,
+#                 'suggestion': 'Check if llama3.1:8b model is loaded and Ollama is running'
+#             }), 500
     
-    except Exception as e:
-        return jsonify({
-            'error': f'Upload and grading failed: {str(e)}'
-        }), 500
+#     except Exception as e:
+#         return jsonify({
+#             'error': f'Upload and grading failed: {str(e)}'
+#         }), 500
 
 
 @grading_bp.route('/grade/status', methods=['GET'])

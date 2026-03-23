@@ -8,6 +8,7 @@ import os
 import sys
 import json
 from datetime import datetime
+from urllib.parse import unquote
 
 from api.services.transcription_pipeline.transcription.whisperx_transcriber import TranscriptionConfig, transcribe_to_json, WhisperXTranscriber
 from api.services.transcription_pipeline.speaker_separate.speaker_separation import speaker_separation
@@ -244,36 +245,83 @@ def get_transcription_by_filename(filename):
         return jsonify({'error': f'Failed to read transcription: {str(e)}'}), 500
 
 
-@transcription_bp.route('/output/<path:filename>')
-def serve_audio(filename):
+@transcription_bp.route('/files/<string:filename>')
+def get_file(filename):
+    try:
+        filename = unquote(filename)
+        base_dir = Path(OUTPUT_DIR)
+
+        # Parse filename
+        # Format: agent_date_time_nature_description.ext
+        name_part, ext = filename.rsplit('.', 1)
+        parts = name_part.split('_')
+
+        print(f"Serving file:\nDecoded: {filename}\nParts: {parts}")
+
+        if len(parts) < 4:
+            return jsonify({'error': 'Invalid filename format'}), 400
+
+        agent = parts[0]
+        date = parts[1]
+        time = parts[2]
+        nature = parts[3]
+        desc = '_'.join(parts[4:]) if len(parts) > 4 else ''
+
+        # Check record exists
+        record_dir = base_dir / agent / f"{date}_{time}_{nature}"
+        if not record_dir.exists() or not record_dir.is_dir():
+            return jsonify({'error': 'File directory not found'}), 404
+
+        # Check file exists
+        file_path = record_dir / filename
+        if not file_path.exists():
+            return jsonify({'error': 'File not found'}), 404
+
+        ext = ext.lower()
+
+        # wav files
+        if ext == "wav":
+            relative_path = f"{agent}/{date}_{time}_{nature}/{filename}"
+            return serve_audio(relative_path)
+
+        # json files
+        elif ext == "json":
+            with open(file_path, "r") as f:
+                return jsonify(json.load(f))
+
+        # txt files
+        elif ext == "txt":
+            with open(file_path, "r") as f:
+                return f.read(), 200, {"Content-Type": "text/plain"}
+
+        else:
+            return jsonify({'error': 'Unsupported file type'}), 400
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+def serve_audio(relative_path):
     """
     Serve audio files from the output directory
-    
+
     Args:
-        filename: Path to the audio file relative to output directory
-        Example: "20251017_123101_bjones/20251017_123101_bjones.wav"
-    
-    Returns:
-        Audio file response
+        relative_path: Path relative to OUTPUT_DIR
+        Example:
+        "JohnDoe/2026-03-22_1430_MEDICAL/file.wav"
     """
-    print(f"Serving audio file: {filename}")
-    
-    # Convert to absolute path
+    print(f"Serving audio file: {relative_path}")
+
     output_dir = OUTPUT_DIR.resolve()
-    
-    # Split the filename into directory and file parts
-    # filename is like "20251017_123101_bjones/20251017_123101_bjones.wav"
-    path_parts = filename.split('/')
-    
-    if len(path_parts) > 1:
-        # Has subdirectory: "20251017_123101_bjones/20251017_123101_bjones.wav"
-        subdir = '/'.join(path_parts[:-1])  # "20251017_123101_bjones"
-        file_name = path_parts[-1]  # "20251017_123101_bjones.wav"
-        file_dir = output_dir / subdir
-    else:
-        # Just a filename
-        file_name = filename
-        file_dir = output_dir
-    
-    # Use send_from_directory with the directory and filename
+
+    file_path = output_dir / relative_path
+
+    if not file_path.exists():
+        return jsonify({'error': 'File not found'}), 404
+
+    # Split into directory + filename
+    file_dir = file_path.parent
+    file_name = file_path.name
+
     return send_from_directory(str(file_dir), file_name)

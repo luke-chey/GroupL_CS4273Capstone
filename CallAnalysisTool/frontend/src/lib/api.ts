@@ -1,4 +1,7 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5001";
+import type { DispatcherRecord, FileGrade } from "@/types/dispatcher";
+
+export const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_URL || "http://localhost:5001";
 
 export interface ApiResponse {
   filename: string;
@@ -31,6 +34,43 @@ export interface ApiResponse {
 export interface Question {
   questionId: string;
   label: string;
+}
+
+interface DispatcherSummaryResponse {
+  dispatchers?: Array<{
+    name?: string;
+    overallGrade?: number;
+    numRecords?: number;
+    numTranscripts?: number;
+    numGrades?: number;
+  }>;
+}
+
+interface DispatcherRecordsResponse {
+  records?: string[];
+}
+
+interface RecordDetailsResponse {
+  audioFiles?: string[];
+  cdrFiles?: string[];
+  transcriptFiles?: string[];
+  gradeFiles?: string[];
+  otherFiles?: string[];
+}
+
+interface TranscriptionByFilenameResponse {
+  success: boolean;
+  filename: string;
+  file_path: string;
+  audio_file: string;
+  data: {
+    segments?: Array<{
+      speaker?: string;
+      text?: string;
+      start: number;
+      end: number;
+    }>;
+  };
 }
 
 /**
@@ -125,4 +165,68 @@ export function getQuestionsAskedIncorrectly(
       questionId,
       label: grade.label,
     }));
+}
+
+async function fetchJson<T>(path: string): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}${path}`);
+
+  if (!response.ok) {
+    throw new Error(`API error (${response.status}): ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
+export async function fetchDispatchers(): Promise<DispatcherSummaryResponse> {
+  return fetchJson<DispatcherSummaryResponse>("/api/dispatchers");
+}
+
+export async function fetchDispatcherRecords(
+  dispatcherName: string
+): Promise<string[]> {
+  const response = await fetchJson<DispatcherRecordsResponse>(
+    `/api/dispatchers/${encodeURIComponent(dispatcherName)}`
+  );
+
+  return Array.isArray(response.records) ? response.records : [];
+}
+
+export async function fetchDispatcherRecordDetails(
+  dispatcherName: string,
+  recordName: string
+): Promise<DispatcherRecord> {
+  const response = await fetchJson<RecordDetailsResponse>(
+    `/api/dispatchers/${encodeURIComponent(
+      dispatcherName
+    )}/${encodeURIComponent(recordName)}`
+  );
+
+  return {
+    name: recordName,
+    audioFile: response.audioFiles?.[0],
+    cdrFile: response.cdrFiles?.[0],
+    transcriptFile: response.transcriptFiles?.[0],
+    gradeFile: response.gradeFiles?.[0],
+    otherFiles: response.otherFiles || [],
+  };
+}
+
+export async function fetchGradeFile(filename: string): Promise<FileGrade> {
+  return fetchJson<FileGrade>(`/api/files/${encodeURIComponent(filename)}`);
+}
+
+export async function fetchBackendFile<T>(filename: string): Promise<T> {
+  return fetchJson<T>(`/api/files/${encodeURIComponent(filename)}`);
+}
+
+export async function fetchTranscriptionByFilename(
+  filename: string
+): Promise<TranscriptionByFilenameResponse> {
+  return fetchJson<TranscriptionByFilenameResponse>(
+    `/api/transcriptions/${encodeURIComponent(filename)}`
+  );
+}
+
+export function buildBackendFileUrl(filename: string): string {
+  return `${API_BASE_URL}/api/files/${encodeURIComponent(filename)}`;
 }

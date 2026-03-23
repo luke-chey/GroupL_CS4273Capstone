@@ -5,6 +5,25 @@ import torch
 import gc
 from whisperx.diarize import DiarizationPipeline
 
+def normalize_dispatcher_name(name):
+    """
+    Normalize a dispatcher name for transcript speaker labels.
+
+    Falls back to a generic label if the provided value is missing or looks like
+    a raw audio filename.
+    """
+    if not name:
+        return "dispatcher"
+
+    normalized = str(name).strip()
+    if not normalized:
+        return "dispatcher"
+
+    if os.path.splitext(normalized)[1].lower() == ".wav":
+        normalized = os.path.splitext(os.path.basename(normalized))[0]
+
+    return normalized or "dispatcher"
+
 def extract_dispatcher_name(basename):
     """
     Extracts the dispatcher name from the audio/folder basename.
@@ -19,12 +38,20 @@ def extract_dispatcher_name(basename):
     if len(parts) >= 3:
         date_part = parts[0]
         time_part = parts[1]
-        dispatcher_name = '_'.join(parts[2:])  
+        dispatcher_name = normalize_dispatcher_name('_'.join(parts[2:]))
         return date_part, time_part, dispatcher_name
     else:
         return "unknown", "unknown", "dispatcher"
 
-def create_combined_transcript(speaker_segments, audio_basename, json_filename, output_path=None):
+def create_combined_transcript(
+    speaker_segments,
+    audio_basename,
+    json_filename,
+    output_path=None,
+    dispatcher_name=None,
+    date_str=None,
+    time_str=None
+):
     """
     Formats and saves the final speaker-separated transcript as JSON in the new format.
 
@@ -44,8 +71,11 @@ def create_combined_transcript(speaker_segments, audio_basename, json_filename, 
     else:
         output_file = output_path
 
-    # Extract dispatcher info from audio_basename (format: YYYYMMDD_HHMMSS_dispatchername)
-    date_str, time_str, dispatcher_name = extract_dispatcher_name(audio_basename)
+    # Prefer explicit metadata from the upload pipeline. Fall back to parsing the basename.
+    parsed_date, parsed_time, parsed_dispatcher_name = extract_dispatcher_name(audio_basename)
+    date_str = date_str or parsed_date
+    time_str = time_str or parsed_time
+    dispatcher_name = normalize_dispatcher_name(dispatcher_name or parsed_dispatcher_name)
 
     all_segments = []
     for speaker, segments in speaker_segments.items():
@@ -61,6 +91,7 @@ def create_combined_transcript(speaker_segments, audio_basename, json_filename, 
     transcript_data = {
         'date': int(date_str) if date_str.isdigit() else 0,
         'time': int(time_str) if time_str.isdigit() else 0,
+        'agent_name': dispatcher_name,
         'total_segments': len(all_segments),
         'speakers': [dispatcher_name, 'caller'],
         'segments': all_segments
@@ -69,7 +100,7 @@ def create_combined_transcript(speaker_segments, audio_basename, json_filename, 
     with open(output_file, 'w', encoding='utf-8') as f:
         json.dump(transcript_data, f, indent=2, ensure_ascii=False)
 
-def speaker_separation(audio_file, transcription_file, output_dir):
+def speaker_separation(audio_path, transcript_path, output_dir, dispatcher_name=None, date_str=None, time_str=None):
     """
     Main function to perform speaker separation on audio and transcription data.
 
@@ -78,14 +109,14 @@ def speaker_separation(audio_file, transcription_file, output_dir):
         transcription_file (str): Path to the WhisperX transcription JSON file
         output_dir (str): Directory where the output should be saved
     """
-    if not os.path.exists(audio_file) or not os.path.exists(transcription_file):
+    if not os.path.exists(audio_path) or not os.path.exists(transcript_path):
         raise FileNotFoundError("Audio file or transcription file not found")
 
     DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
-    audio = whisperx.load_audio(audio_file)
+    audio = whisperx.load_audio(audio_path)
 
-    with open(transcription_file, 'r', encoding='utf-8') as f:
+    with open(transcript_path, 'r', encoding='utf-8') as f:
         data = json.load(f)
     result = {'segments': data['segments'], 'language': 'en'}
 
@@ -138,11 +169,21 @@ def speaker_separation(audio_file, transcription_file, output_dir):
         }
 
     # Create output filename based on audio file basename
-    audio_basename = os.path.splitext(os.path.basename(audio_file))[0]
+    audio_basename = os.path.splitext(os.path.basename(audio_path))[0]
 
     # Use the output_dir and create the combined transcript there
     output_path = os.path.join(str(output_dir), f"{audio_basename}.json")
-    create_combined_transcript(speaker_segments, audio_basename, transcription_file, output_path)
+    create_combined_transcript(
+        speaker_segments,
+        audio_basename,
+        transcript_path,
+        output_path,
+        dispatcher_name=dispatcher_name,
+        date_str=str(date_str) if date_str is not None else None,
+        time_str=str(time_str) if time_str is not None else None,
+    )
+
+    return output_path
 
 
 def main():

@@ -17,6 +17,8 @@ from flask_cors import CORS
 from api.routes.grading import grading_bp
 from api.routes.health import health_bp
 from api.routes.transcription import transcription_bp, initialize_transcriber
+from api.routes.upload import upload_bp
+from api.routes.dispatchers import dispatchers_bp
 from AIGrader import initialize_ollama, check_ollama_ready
 
 def create_app():
@@ -37,6 +39,8 @@ def create_app():
     app.register_blueprint(health_bp, url_prefix='/api')
     app.register_blueprint(grading_bp, url_prefix='/api')
     app.register_blueprint(transcription_bp, url_prefix='/api')
+    app.register_blueprint(upload_bp, url_prefix='/api')
+    app.register_blueprint(dispatchers_bp, url_prefix='/api')
     
     # Add error handler to catch all unhandled errors
     @app.errorhandler(Exception)

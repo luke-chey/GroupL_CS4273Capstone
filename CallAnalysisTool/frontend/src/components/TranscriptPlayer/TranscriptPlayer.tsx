@@ -35,6 +35,7 @@ function TranscriptPlayer({
 
   // converts json into message
   const segments = (transcriptData as TranscriptData)?.segments ?? [];
+  console.log(segments);
   const messages = segments.map(
     (segment: TranscriptSegment, index: number) => ({
       id: index,
