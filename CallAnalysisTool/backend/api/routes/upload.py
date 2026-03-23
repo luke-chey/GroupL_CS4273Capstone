@@ -10,6 +10,7 @@ from pathlib import Path
 
 # Third-party
 from flask import Blueprint, request, jsonify
+from pathvalidate import sanitize_filepath
 
 # Local modules
 from AIGrader import detect_nature_codes_in_memory, identify_nature_code
@@ -152,7 +153,7 @@ def upload():
 
     Transcribes zip contents (if provided), grades transcription.
     
-    Response: JSON with success message and call folder name.
+    Response: JSON with success message and record folder name.
     """
     try:
         print("Upload endpoint called")
@@ -173,13 +174,13 @@ def upload():
                 print("No file provided")
                 return jsonify({'error': 'No file selected'}), 400
 
-            # Get file extension
+            # Get file extension, determine if zip
             filename, file_extension = os.path.splitext(file.filename)
             print(f"File detected. Name: {filename}. Extension: {file_extension}")
             if file_extension == '.zip':
                 is_zip = True
 
-        # Do processing in temp dir
+        # Do all processing in temp dir
         date = time = agent_name = (None,) * 3
         cdr_path = audio_path = transcript_path = grades_path = nature_code = (None,) * 5
         transcript_data = None
@@ -249,6 +250,7 @@ def upload():
                 time = transcript_data.get("time")
                 agent_name = (transcript_data.get("agent_name") or (transcript_data.get("speakers", [None])[0]))
                 print(f"Info extracted from transcript: Date={date}, Time={time}, Agent={agent_name}")
+
             else:
                 print("Both is_zip and is_json False")
                 return jsonify({'error': 'No file or json provided'}), 400
@@ -279,6 +281,7 @@ def upload():
 
             # Create folder: output/{agent_name}/{date}_{time}_{nature_code}/
             dest_dir = base_dir / agent_name / f"{date}_{time}_{nature_code}"
+            dest_dir = sanitize_filepath(dest_dir, replacement_text="-")
             dest_dir.mkdir(parents=True, exist_ok=True)
 
             # Build base filename prefix
@@ -290,11 +293,18 @@ def upload():
             transcript_src = Path(transcript_path)
             grades_src = Path(grades_path)
 
-            # Destination paths (preserve correct extensions)
+            # Destination paths (preserve correct extensions and sanitize)
             cdr_dst = dest_dir / f"{base_name}_cdr{cdr_src.suffix}"
+            cdr_dst = sanitize_filepath(cdr_dst, replacement_text="-")
+
             audio_dst = dest_dir / f"{base_name}_audio{audio_src.suffix}"
+            audio_dst = sanitize_filepath(audio_dst, replacement_text="-")
+
             transcript_dst = dest_dir / f"{base_name}_transcript{transcript_src.suffix}"
+            transcript_dst = sanitize_filepath(transcript_dst, replacement_text="-")
+
             grades_dst = dest_dir / f"{base_name}_grades{grades_src.suffix}"
+            grades_dst = sanitize_filepath(grades_dst, replacement_text="-")
 
             # Move + rename
             if is_zip and cdr_src.exists():

@@ -14,7 +14,19 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 
 @dispatchers_bp.route('/dispatchers', methods=['GET'])
 def get_dispatchers():
-    # Returns a list of all dispatchers, their overall grade, and stats
+    """
+    Returns a list of all dispatchers in the system.
+
+    Dispatchers contain the following:
+    `name`
+    `overallGrade`
+    `numRecords`
+    `numTranscripts`
+    `numGrades`
+
+    **Returns:**
+    - `Dispatcher[] dispatchers`
+    """
     try:
         # Base output directory
         base_dir = Path(OUTPUT_DIR)
@@ -93,7 +105,12 @@ def get_dispatchers():
 
 @dispatchers_bp.route('/dispatchers/<string:name>', methods=['GET'])
 def get_dispatcher_records(name):
-    # Returns a list of all records for a given dispatcher
+    """
+    Returns a list of all records for a given dispatcher.
+
+    **Returns:**
+    - `str[] records`
+    """
     try:
         # Base output directory
         base_dir = Path(OUTPUT_DIR)
@@ -127,6 +144,16 @@ def get_dispatcher_records(name):
 
 @dispatchers_bp.route('/dispatchers/<string:name>/<string:record_name>', methods=['GET'])
 def get_record_details(name, record_name):
+    """
+    Returns all the files (names only) for a given record.
+    
+    **Returns:**
+    - `str[] audioFiles` 
+    - `str[] cdrFiles` 
+    - `str[] transcriptFiles` 
+    - `str[] gradeFiles` 
+    - `str[] otherFiles` 
+    """
     try:
         record_name = unquote(record_name)
 
