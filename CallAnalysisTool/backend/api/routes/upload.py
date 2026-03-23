@@ -10,6 +10,7 @@ from pathlib import Path
 
 # Third-party
 from flask import Blueprint, request, jsonify
+from pathvalidate import sanitize_filepath
 
 # Local modules
 from AIGrader import detect_nature_codes_in_memory, identify_nature_code
@@ -290,11 +291,18 @@ def upload():
             transcript_src = Path(transcript_path)
             grades_src = Path(grades_path)
 
-            # Destination paths (preserve correct extensions)
+            # Destination paths (preserve correct extensions and sanitize)
             cdr_dst = dest_dir / f"{base_name}_cdr{cdr_src.suffix}"
+            cdr_dst = sanitize_filepath(cdr_dst, replacement_text="-")
+
             audio_dst = dest_dir / f"{base_name}_audio{audio_src.suffix}"
+            audio_dst = sanitize_filepath(audio_dst, replacement_text="-")
+
             transcript_dst = dest_dir / f"{base_name}_transcript{transcript_src.suffix}"
+            transcript_dst = sanitize_filepath(transcript_dst, replacement_text="-")
+
             grades_dst = dest_dir / f"{base_name}_grades{grades_src.suffix}"
+            grades_dst = sanitize_filepath(grades_dst, replacement_text="-")
 
             # Move + rename
             if is_zip and cdr_src.exists():
