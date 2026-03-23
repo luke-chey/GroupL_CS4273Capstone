@@ -1,7 +1,21 @@
 import type { DispatcherRecord, FileGrade } from "@/types/dispatcher";
 
-export const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:5001";
+const API_PORT = process.env.NEXT_PUBLIC_API_PORT || "5001";
+
+export function getApiBaseUrl(): string {
+  let base = `http://127.0.0.1:${API_PORT}`
+
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    base = process.env.NEXT_PUBLIC_API_URL;
+  }
+
+  if (typeof window !== "undefined") {
+    base = `${window.location.protocol}//${window.location.hostname}:${API_PORT}`;
+  }
+
+  console.log(base);
+  return base;
+}
 
 export interface ApiResponse {
   filename: string;
@@ -29,6 +43,12 @@ export interface ApiResponse {
     questions_source: string;
     nature_code_detection: string;
   };
+}
+
+export interface UploadPipelineResponse {
+  outputDestination: string;
+  dispatcherName: string;
+  grades: ApiResponse;
 }
 
 export interface Question {
@@ -61,14 +81,34 @@ interface RecordDetailsResponse {
 /**
  * Upload a JSON file to the API and get analysis results
  */
-export async function uploadFileForAnalysis(file: File): Promise<ApiResponse> {
+export async function uploadFileForAnalysis(
+  file: File
+): Promise<UploadPipelineResponse> {
   const formData = new FormData();
   formData.append("file", file);
 
+  return postUploadRequest(formData);
+}
+
+export async function uploadTranscriptForAnalysis(
+  transcriptData: unknown
+): Promise<UploadPipelineResponse> {
+  return postUploadRequest(JSON.stringify(transcriptData), {
+    "Content-Type": "application/json",
+  });
+}
+
+async function postUploadRequest(
+  body: BodyInit,
+  headers?: HeadersInit
+): Promise<UploadPipelineResponse> {
+  const apiBaseUrl = getApiBaseUrl();
+
   try {
-    const response = await fetch(`${API_BASE_URL}/api/upload`, {
+    const response = await fetch(`${apiBaseUrl}/api/upload`, {
       method: "POST",
-      body: formData,
+      headers,
+      body,
     });
 
     if (!response.ok) {
@@ -95,7 +135,7 @@ export async function uploadFileForAnalysis(file: File): Promise<ApiResponse> {
     // Handle network errors specifically
     if (error instanceof TypeError && error.message.includes("fetch")) {
       throw new Error(
-        `Failed to connect to API at ${API_BASE_URL}. Make sure the backend server is running on port 5000.`
+        `Failed to connect to API at ${apiBaseUrl}. Make sure the backend server is running on port ${API_PORT}.`
       );
     }
     // Re-throw other errors
@@ -153,7 +193,7 @@ export function getQuestionsAskedIncorrectly(
 }
 
 async function fetchJson<T>(path: string): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`);
+  const response = await fetch(`${getApiBaseUrl()}${path}`);
 
   if (!response.ok) {
     throw new Error(`API error (${response.status}): ${response.statusText}`);
@@ -205,5 +245,5 @@ export async function fetchBackendFile<T>(filename: string): Promise<T> {
 }
 
 export function buildBackendFileUrl(filename: string): string {
-  return `${API_BASE_URL}/api/files/${encodeURIComponent(filename)}`;
+  return `${getApiBaseUrl()}/api/files/${encodeURIComponent(filename)}`;
 }

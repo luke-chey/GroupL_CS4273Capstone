@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
+import { fetchDispatchers } from "@/lib/api";
 import { Dispatcher } from "@/types/dispatcher";
 import {
   Card,
@@ -23,12 +24,7 @@ const DispatcherList = () => {
   // load all dispatchers from backend
   const loadDispatchers = async () => {
     try {
-      const res = await fetch("http://localhost:5001/api/dispatchers");
-      if (!res.ok) {
-        throw new Error(`Unable to load dispatchers: ${res.status} ${res.statusText}`);
-      }
-
-      const data = await res.json();
+      const data = await fetchDispatchers();
       const backendDispatchers: any[] = data?.dispatchers || [];
 
       const normalized = backendDispatchers.map((d, index) => ({

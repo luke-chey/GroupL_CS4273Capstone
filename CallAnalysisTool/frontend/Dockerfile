@@ -14,7 +14,6 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
 # Arguments for environment variables
-ARG NEXT_PUBLIC_API_URL=http://localhost:5001
 ARG NODE_ENV=production
 ARG PORT=3000
 

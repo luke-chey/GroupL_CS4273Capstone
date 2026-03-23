@@ -1,5 +1,6 @@
 "use client";
 import React, { useState, useRef } from "react";
+import { uploadFileForAnalysis, uploadTranscriptForAnalysis } from "@/lib/api";
 import { Dispatcher } from "@/types/dispatcher";
 import ProgressModal from "./ProgressModal";
 import { useRouter } from "next/navigation";
@@ -127,22 +128,7 @@ const UploadFileContainer = () => {
       setUploadProgress(
         `Transcribing & grading ${file.name} (${index + 1}/${total})...`
       );
-      const formData = new FormData();
-      formData.append("file", file);
-
-      const response = await fetch("http://localhost:5001/api/upload", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(
-          errorData.error || `Upload failed: ${response.statusText}`
-        );
-      }
-
-      const result = await response.json();
+      const result = await uploadFileForAnalysis(file);
       const { dispatcherName, grades: gradeResult } = result;
 
       // Extract folder structure to build foldername
@@ -170,22 +156,7 @@ const UploadFileContainer = () => {
       const fileContent = await file.text();
       const jsonData = JSON.parse(fileContent);
 
-      const response = await fetch("http://localhost:5001/api/upload", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(jsonData),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(
-          errorData.error || `Upload failed: ${response.statusText}`
-        );
-      }
-
-      const result = await response.json();
+      const result = await uploadTranscriptForAnalysis(jsonData);
       const { dispatcherName, grades: gradeResult } = result;
 
       // Extract folder structure to build foldername
