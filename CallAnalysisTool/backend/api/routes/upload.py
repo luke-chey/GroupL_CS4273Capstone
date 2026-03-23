@@ -14,10 +14,9 @@ from flask import Blueprint, request, jsonify
 # Local modules
 from AIGrader import detect_nature_codes_in_memory, identify_nature_code
 from JSONTranscriptionParser import json_to_text
-from api.routes.transcription import get_transcriber
 from api.services.ai_grader import AIGraderService
 from api.services.transcription_pipeline.speaker_separate.speaker_separation import speaker_separation
-
+from api.services.transcriber import get_transcriber
 
 upload_bp = Blueprint('upload', __name__)
 

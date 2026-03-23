@@ -4,10 +4,8 @@ import { AudioPlayer } from "../AudioPlayer/AudioPlayer";
 import { useEffect, useState } from "react";
 import { TranscriptPlayer } from "../TranscriptPlayer/TranscriptPlayer";
 import {
-  API_BASE_URL,
   buildBackendFileUrl,
   fetchBackendFile,
-  fetchTranscriptionByFilename,
 } from "@/lib/api";
 
 interface TranscriptSegment {
@@ -22,13 +20,11 @@ interface TranscriptData {
 }
 
 interface PlayerControllerProps {
-  transcriptionId?: string;
   transcriptFile?: string;
   audioFile?: string;
 }
 
 export default function PlayerController({
-  transcriptionId,
   transcriptFile,
   audioFile,
 }: PlayerControllerProps) {
@@ -63,34 +59,6 @@ export default function PlayerController({
         setTranscriptionLoaded(false);
       });
   }, [audioFile, transcriptFile]);
-
-  // Load transcription by id for legacy/live transcription routes
-  useEffect(() => {
-    if (!transcriptionId || transcriptFile) {
-      return;
-    }
-
-    setTranscriptionLoaded(false);
-    setTranscription(null);
-    setCurrentTime(0);
-
-    fetchTranscriptionByFilename(transcriptionId)
-      .then((data) => {
-        setTranscription(data.data);
-        setTranscriptionLoaded(true);
-        if (data.audio_file) {
-          setFileURL(`${API_BASE_URL}/api/output/${data.audio_file}`);
-          setFileName(data.audio_file.split("/").pop() || `${data.filename}.wav`);
-        } else {
-          setFileName(`${data.filename}.wav`);
-          setFileURL(buildBackendFileUrl(`${data.filename}.wav`));
-        }
-      })
-      .catch((error) => {
-        console.error("Error loading transcription:", error);
-        setTranscriptionLoaded(false);
-      });
-  }, [transcriptionId, transcriptFile]);
 
   // handlers
   const handleGetFile = (name: string) => {
@@ -145,14 +113,7 @@ export default function PlayerController({
   return (
     <>
       <div className={styles.presentation_header}>
-        <p>
-          <strong>Dispatcher: </strong>
-          {dispatcherName}
-        </p>
-        <p>
-          <strong>Audio File: </strong>
-          {fileName}
-        </p>
+
       </div>
       <TranscriptPlayer
         transcriptData={transcription || undefined}

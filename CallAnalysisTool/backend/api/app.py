@@ -14,11 +14,10 @@ sys.path.insert(0, str(backend_dir))
 
 from flask import Flask, jsonify
 from flask_cors import CORS
-from api.routes.grading import grading_bp
-from api.routes.health import health_bp
-from api.routes.transcription import transcription_bp, initialize_transcriber
-from api.routes.upload import upload_bp
 from api.routes.dispatchers import dispatchers_bp
+from api.routes.files import files_bp
+from api.routes.upload import upload_bp
+from api.services.transcriber import initialize_transcriber
 from AIGrader import initialize_ollama, check_ollama_ready
 
 def create_app():
@@ -36,11 +35,9 @@ def create_app():
     })
     
     # Register blueprints
-    app.register_blueprint(health_bp, url_prefix='/api')
-    app.register_blueprint(grading_bp, url_prefix='/api')
-    app.register_blueprint(transcription_bp, url_prefix='/api')
-    app.register_blueprint(upload_bp, url_prefix='/api')
     app.register_blueprint(dispatchers_bp, url_prefix='/api')
+    app.register_blueprint(upload_bp, url_prefix='/api')
+    app.register_blueprint(files_bp, url_prefix='/api')
     
     # Add error handler to catch all unhandled errors
     @app.errorhandler(Exception)
@@ -93,9 +90,9 @@ if __name__ == '__main__':
         print("EMS Call Analysis API Server")
         print("=" * 60)
         print("Running on: http://localhost:5001")
-        print("Health check: http://localhost:5001/api/health")
-        print("Grade endpoint: http://localhost:5001/api/grade")
-        print("Transcription endpoint: http://localhost:5001/api/transcription")
+        print("Dispatchers endpoint: http://localhost:5001/api/dispatchers")
+        print("Upload endpoint: http://localhost:5001/api/upload")
+        print("Files endpoint: http://localhost:5001/api/files/<filename>")
         print("=" * 60)
 
         

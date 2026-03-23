@@ -85,13 +85,18 @@ const getQuestionStatusClassName = (status?: string): string => {
   switch ((status || "").trim().toLowerCase()) {
     case "asked correctly":
       return "text-green-600 font-semibold";
+
     case "not asked":
+    case "not as scripted":
       return "text-red-600 font-semibold";
+
     case "obvious":
       return "text-blue-600 font-semibold";
+
     case "unknown":
     case "n/a":
       return "text-yellow-600 font-semibold";
+      
     default:
       return "text-gray-600 font-medium";
   }
@@ -252,7 +257,7 @@ const DispatcherDetails = ({
         {/* Transcript */}
         <Card>
           <CardHeader>
-            <CardTitle>Transcript Grading</CardTitle>
+            <CardTitle>Question Grades</CardTitle>
           </CardHeader>
 
           <CardContent>
@@ -285,18 +290,13 @@ const DispatcherDetails = ({
         {/* Audio */}
         <Card>
           <CardHeader>
-            <CardTitle>Audio</CardTitle>
-            <CardDescription>
-              {currentTranscript
-                ? "Synced"
-                : `${audioCount} files`}
-            </CardDescription>
+            <CardTitle>Audio and Transcript</CardTitle>
           </CardHeader>
 
           <CardContent>
             {matchedAudio ? (
               <>
-                <p>{matchedAudio}</p>
+                <p className="font-medium">{matchedAudio}</p>
                 <PlayerController
                   transcriptFile={currentTranscript}
                   audioFile={matchedAudio}

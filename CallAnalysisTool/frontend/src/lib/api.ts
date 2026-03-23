@@ -58,21 +58,6 @@ interface RecordDetailsResponse {
   otherFiles?: string[];
 }
 
-interface TranscriptionByFilenameResponse {
-  success: boolean;
-  filename: string;
-  file_path: string;
-  audio_file: string;
-  data: {
-    segments?: Array<{
-      speaker?: string;
-      text?: string;
-      start: number;
-      end: number;
-    }>;
-  };
-}
-
 /**
  * Upload a JSON file to the API and get analysis results
  */
@@ -217,14 +202,6 @@ export async function fetchGradeFile(filename: string): Promise<FileGrade> {
 
 export async function fetchBackendFile<T>(filename: string): Promise<T> {
   return fetchJson<T>(`/api/files/${encodeURIComponent(filename)}`);
-}
-
-export async function fetchTranscriptionByFilename(
-  filename: string
-): Promise<TranscriptionByFilenameResponse> {
-  return fetchJson<TranscriptionByFilenameResponse>(
-    `/api/transcriptions/${encodeURIComponent(filename)}`
-  );
 }
 
 export function buildBackendFileUrl(filename: string): string {
