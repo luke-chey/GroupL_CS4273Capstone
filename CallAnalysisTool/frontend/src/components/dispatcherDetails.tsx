@@ -10,10 +10,19 @@ import {
   CardContent,
 } from "@/components/ui/card";
 import PlayerController from "./PlayerController/PlayerController";
+import { TranscriptPlayer } from "./TranscriptPlayer/TranscriptPlayer";
 
 interface DispatcherDetailsProps {
   dispatcher: Dispatcher;
   batchMode?: boolean;
+  transcriptData: any;
+  setTranscriptData: React.Dispatch<React.SetStateAction<any>>;
+  onEditSegment: (index: number, speaker: string, text: string) => void;
+  onSaveTranscript: () => void;
+  savingTranscript: boolean;
+  saveMessage: string;
+  // parent page knows which filename to PUT to on save
+  onTranscriptFileChange?: (filename: string | null) => void;
 }
 
 interface BatchPage {
@@ -27,28 +36,20 @@ interface StoredBatchData {
 }
 
 const parseStoredDispatchers = (raw: string | null): Dispatcher[] => {
-  if (!raw) {
-    return [];
-  }
-
+  if (!raw) return [];
   try {
     return JSON.parse(raw) as Dispatcher[];
   } catch {
-    // Favor an empty state over a crash if local data is malformed.
     return [];
   }
 };
 
 const parseStoredBatchPages = (raw: string | null): BatchPage[] => {
-  if (!raw) {
-    return [];
-  }
-
+  if (!raw) return [];
   try {
     const parsed = JSON.parse(raw) as StoredBatchData;
     return Array.isArray(parsed.pages) ? parsed.pages : [];
   } catch {
-    // Ignore invalid batch payloads so details view remains usable.
     return [];
   }
 };
@@ -56,7 +57,6 @@ const parseStoredBatchPages = (raw: string | null): BatchPage[] => {
 const buildFallbackPages = (dispatcher: Dispatcher): BatchPage[] => {
   const transcriptFiles = dispatcher.files?.transcriptFiles || [];
   const grades = dispatcher.grades || {};
-
   return transcriptFiles
     .filter((filename) => Boolean(grades[filename]))
     .map((filename, index) => ({
@@ -73,32 +73,30 @@ const calculateOverallGrade = (
   grades: Dispatcher["grades"]
 ): number | null => {
   const safeGrades = grades || {};
-  const gradedCount = transcriptFiles.filter((filename) =>
-    Boolean(safeGrades[filename])
-  ).length;
-
-  // Only return a score when at least one graded file exists.
-  if (gradedCount === 0) {
-    return null;
-  }
-
-  const total = transcriptFiles.reduce((sum, filename) => {
-    const fileGrade = safeGrades[filename];
-    return fileGrade ? sum + fileGrade.grade_percentage : sum;
+  const gradedCount = transcriptFiles.filter((f) => Boolean(safeGrades[f])).length;
+  if (gradedCount === 0) return null;
+  const total = transcriptFiles.reduce((sum, f) => {
+    const g = safeGrades[f];
+    return g ? sum + g.grade_percentage : sum;
   }, 0);
-
   return total / gradedCount;
 };
 
 const DispatcherDetails = ({
   dispatcher,
   batchMode = false,
+  transcriptData,
+  setTranscriptData,
+  onEditSegment,
+  onSaveTranscript,
+  savingTranscript,
+  saveMessage,
+  onTranscriptFileChange,
 }: DispatcherDetailsProps) => {
   const [dispatchers, setDispatchers] = useState<Dispatcher[]>([]);
   const [batchPages, setBatchPages] = useState<BatchPage[]>([]);
   const [currentGradeIndex, setCurrentGradeIndex] = useState(0);
 
-  // Keep localStorage-driven dispatcher data in sync with in-app updates.
   const loadLocalData = () => {
     setDispatchers(parseStoredDispatchers(localStorage.getItem("dispatchers")));
     setBatchPages(parseStoredBatchPages(localStorage.getItem("latestUploadBatch")));
@@ -113,9 +111,7 @@ const DispatcherDetails = ({
 
   const dispatcherMap = useMemo(() => {
     const map = new Map<string, Dispatcher>();
-    for (const d of dispatchers) {
-      map.set(d.id, d);
-    }
+    for (const d of dispatchers) map.set(d.id, d);
     map.set(dispatcher.id, dispatcher);
     return map;
   }, [dispatchers, dispatcher]);
@@ -123,23 +119,16 @@ const DispatcherDetails = ({
   const pagesFromBatch = useMemo(
     () =>
       batchPages.filter((page) => {
-        const pageDispatcher = dispatcherMap.get(page.dispatcherId);
-        // Ignore stale batch entries if grade data was removed.
-        return Boolean(pageDispatcher?.grades?.[page.transcriptFilename]);
+        const d = dispatcherMap.get(page.dispatcherId);
+        return Boolean(d?.grades?.[page.transcriptFilename]);
       }),
     [batchPages, dispatcherMap]
   );
 
   const activePages = useMemo(() => {
-    // Batch navigation only applies when explicitly entering details in batch mode.
-    const batchContainsCurrentDispatcher =
-      batchMode &&
-      pagesFromBatch.some((page) => page.dispatcherId === dispatcher.id);
-    if (batchContainsCurrentDispatcher) {
-      return pagesFromBatch;
-    }
-
-    return buildFallbackPages(dispatcher);
+    const batchContainsCurrent =
+      batchMode && pagesFromBatch.some((p) => p.dispatcherId === dispatcher.id);
+    return batchContainsCurrent ? pagesFromBatch : buildFallbackPages(dispatcher);
   }, [pagesFromBatch, dispatcher, batchMode]);
 
   useEffect(() => {
@@ -147,18 +136,15 @@ const DispatcherDetails = ({
       setCurrentGradeIndex(0);
       return;
     }
-
-    const startIndex = activePages.findIndex(
-      (page) => page.dispatcherId === dispatcher.id
-    );
+    const startIndex = activePages.findIndex((p) => p.dispatcherId === dispatcher.id);
     setCurrentGradeIndex(startIndex >= 0 ? startIndex : 0);
   }, [dispatcher.id, activePages]);
 
-  const safeCurrentGradeIndex =
-    activePages.length > 0
-      ? Math.min(currentGradeIndex, activePages.length - 1)
-      : 0;
-  const currentPage = activePages[safeCurrentGradeIndex];
+  const safeIndex = activePages.length > 0
+    ? Math.min(currentGradeIndex, activePages.length - 1)
+    : 0;
+
+  const currentPage = activePages[safeIndex];
   const activeDispatcher = currentPage
     ? dispatcherMap.get(currentPage.dispatcherId)
     : dispatcher;
@@ -170,23 +156,45 @@ const DispatcherDetails = ({
     ? activeGrades[currentTranscriptFile]
     : undefined;
 
+  // Notify parent whenever the active transcript file changes
+  useEffect(() => {
+    onTranscriptFileChange?.(currentTranscriptFile ?? null);
+  }, [currentTranscriptFile, onTranscriptFileChange]);
+
+  useEffect(() => {
+    const loadTranscript = async () => {
+      if (!currentTranscriptFile) return;
+
+      try {
+        const filenameKey = currentTranscriptFile.replace(/\.json$/, "");
+        const response = await fetch(
+          `http://localhost:5001/api/transcriptions/${filenameKey}`
+        );
+        if (!response.ok) throw new Error("Failed to load transcript");
+        const data = await response.json();
+        // The GET endpoint returns { success, data: { segments, ... } }
+        setTranscriptData(data.data ?? data);
+      } catch (error) {
+        console.error("Error loading transcript:", error);
+        setTranscriptData(null);
+      }
+    };
+
+    loadTranscript();
+  }, [currentTranscriptFile, setTranscriptData]);
+
   const matchedAudioFile = currentTranscriptFile
     ? activeAudioFiles.find(
         (audioFile) => baseName(audioFile) === baseName(currentTranscriptFile)
       )
     : undefined;
-  const activeDispatcherGradeCount = activeTranscriptFiles.filter((filename) =>
-    Boolean(activeGrades[filename])
-  ).length;
+
   const overallGrade = calculateOverallGrade(activeTranscriptFiles, activeGrades);
 
   return (
     <div className="container mx-auto p-6">
       <div className="mb-6">
-        <Link
-          href="/records"
-          className="text-blue-500 hover:underline mb-4 inline-block"
-        >
+        <Link href="/records" className="text-blue-500 hover:underline mb-4 inline-block">
           ← Back to Records
         </Link>
         <h1 className="text-3xl font-bold mt-4">
@@ -204,25 +212,21 @@ const DispatcherDetails = ({
           <div className="mt-4 flex items-center gap-3">
             <button
               type="button"
-              onClick={() =>
-                setCurrentGradeIndex((prev) => Math.max(prev - 1, 0))
-              }
-              disabled={safeCurrentGradeIndex === 0}
+              onClick={() => setCurrentGradeIndex((prev) => Math.max(prev - 1, 0))}
+              disabled={safeIndex === 0}
               className="px-3 py-2 rounded-md border border-gray-300 text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
             >
               Previous
             </button>
             <p className="text-sm text-gray-600">
-              File {safeCurrentGradeIndex + 1} / {activePages.length}
+              File {safeIndex + 1} / {activePages.length}
             </p>
             <button
               type="button"
               onClick={() =>
-                setCurrentGradeIndex((prev) =>
-                  Math.min(prev + 1, activePages.length - 1)
-                )
+                setCurrentGradeIndex((prev) => Math.min(prev + 1, activePages.length - 1))
               }
-              disabled={safeCurrentGradeIndex === activePages.length - 1}
+              disabled={safeIndex === activePages.length - 1}
               className="px-3 py-2 rounded-md border border-gray-300 text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
             >
               Next
@@ -232,7 +236,6 @@ const DispatcherDetails = ({
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Transcript Grading */}
         <Card>
           <CardHeader>
             <CardTitle>Transcript Grading</CardTitle>
@@ -252,13 +255,12 @@ const DispatcherDetails = ({
                   )}
                   <ul className="space-y-1">
                     {Object.entries(currentFileGrade.per_question || {}).map(
-                      ([key, question]) => (
+                      ([key, question]: [string, any]) => (
                         <li key={key} className="flex justify-between text-sm">
                           <span>{question.label}</span>
                           <span
                             className={
-                              question.status === "Asked Correctly" ||
-                              question.status === "Obvious"
+                              question.status === "Asked Correctly" || question.status === "Obvious"
                                 ? "text-green-600 font-semibold"
                                 : question.status === "Not As Scripted"
                                 ? "text-yellow-500 font-semibold"
@@ -281,14 +283,11 @@ const DispatcherDetails = ({
           </CardContent>
         </Card>
 
-        {/* Audio Files */}
         <Card>
           <CardHeader>
             <CardTitle>Audio File</CardTitle>
             <CardDescription>
-              {currentTranscriptFile
-                ? "Synced to current graded file"
-                : `${activeAudioFiles.length} file(s)`}
+              {currentTranscriptFile ? "Synced to current graded file" : `${activeAudioFiles.length} file(s)`}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -300,11 +299,52 @@ const DispatcherDetails = ({
             ) : currentTranscriptFile ? (
               <p className="text-gray-500">No matching audio file.</p>
             ) : activeAudioFiles.length > 0 ? (
-              <p className="text-gray-500">
-                No graded transcript selected for audio sync.
-              </p>
+              <p className="text-gray-500">No graded transcript selected for audio sync.</p>
             ) : (
               <p className="text-gray-500">No audio files available.</p>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="mt-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Transcript Editor</CardTitle>
+            <CardDescription>
+              Edit transcript text and speaker labels for the selected file
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {currentTranscriptFile ? (
+              <div className="space-y-4">
+                <div className="flex items-center gap-4">
+                  <button
+                    onClick={onSaveTranscript}
+                    disabled={savingTranscript || !transcriptData}
+                    className="rounded bg-blue-600 px-4 py-2 text-white disabled:opacity-50 hover:bg-blue-700 transition-colors"
+                  >
+                    {savingTranscript ? "Saving..." : "Save Transcript"}
+                  </button>
+                  {saveMessage && (
+                    <p className={`text-sm ${saveMessage.includes("successfully") ? "text-green-600" : "text-red-600"}`}>
+                      {saveMessage}
+                    </p>
+                  )}
+                </div>
+
+                {transcriptData ? (
+                  <TranscriptPlayer
+                    transcriptData={transcriptData}
+                    currentTime={0}
+                    onEditSegment={onEditSegment}
+                  />
+                ) : (
+                  <p className="text-gray-500">Loading transcript...</p>
+                )}
+              </div>
+            ) : (
+              <p className="text-gray-500">No transcript selected.</p>
             )}
           </CardContent>
         </Card>

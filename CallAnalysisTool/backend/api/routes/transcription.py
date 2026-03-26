@@ -244,6 +244,48 @@ def get_transcription_by_filename(filename):
         return jsonify({'error': f'Failed to read transcription: {str(e)}'}), 500
 
 
+@transcription_bp.route("/transcriptions/<filename>", methods=["PUT"])
+def update_transcription(filename):
+    """
+    Update (overwrite) a transcription file with edited segment data.
+
+    Args:
+        filename: The transcription folder/file name (without extension),
+                  e.g. "20251017_123101_bjones"
+
+    Request body (JSON):
+        Full transcription object including updated segments list.
+        Must contain a "segments" key.
+
+    Returns:
+        JSON with success message and saved transcript.
+    """
+    # Correct path: output/<filename>/<filename>.json
+    file_path = OUTPUT_DIR / filename / f"{filename}.json"
+
+    if not file_path.exists():
+        return jsonify({"error": f"Transcript not found: {file_path}"}), 404
+
+    try:
+        updated_data = request.get_json()
+
+        if not updated_data:
+            return jsonify({"error": "No JSON body provided"}), 400
+
+        if "segments" not in updated_data:
+            return jsonify({"error": "Transcript must include 'segments'"}), 400
+
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(updated_data, f, indent=2, ensure_ascii=False)
+
+        return jsonify({
+            "message": "Transcript updated successfully",
+            "transcript": updated_data
+        }), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @transcription_bp.route('/output/<path:filename>')
 def serve_audio(filename):
     """

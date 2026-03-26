@@ -99,7 +99,6 @@ const saveEdit = () => {
     const box = chatBoxRef.current;
     if (box) {
       box.scrollTop = 0;
-      activeIndex = 0;
     }
   }, [transcriptData]);
 
@@ -138,8 +137,48 @@ const saveEdit = () => {
                                 } 
                             `}
             >
-              <div className={styles.speaker}>{message.speaker}</div>
-              <div>{message.text}</div>
+                          {editingIndex === message.id ? (
+              <>
+                <div className={styles.speaker}>Editing Segment</div>
+
+                <select
+                  value={editSpeaker}
+                  onChange={(e) => setEditSpeaker(e.target.value)}
+                  className={styles.editSelect}
+                >
+                  <option value="dispatcher">dispatcher</option>
+                  <option value="caller">caller</option>
+                  <option value="unknown">unknown</option>
+                </select>
+
+                <textarea
+                  value={editText}
+                  onChange={(e) => setEditText(e.target.value)}
+                  className={styles.editTextarea}
+                  rows={4}
+                />
+
+                <div className={styles.editActions}>
+                  <button onClick={saveEdit} className={styles.saveButton}>
+                    Save
+                  </button>
+                  <button onClick={cancelEdit} className={styles.cancelButton}>
+                    Cancel
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className={styles.speaker}>{message.speaker}</div>
+                <div>{message.text}</div>
+                <button
+                  onClick={() => startEdit(message.id, message.speaker, message.text)}
+                  className={styles.editButton}
+                >
+                  Edit
+                </button>
+              </>
+            )}
             </div>
           </div>
         ))}
