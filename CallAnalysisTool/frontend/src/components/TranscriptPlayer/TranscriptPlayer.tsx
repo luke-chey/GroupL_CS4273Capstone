@@ -171,12 +171,14 @@ const saveEdit = () => {
               <>
                 <div className={styles.speaker}>{message.speaker}</div>
                 <div>{message.text}</div>
-                <button
-                  onClick={() => startEdit(message.id, message.speaker, message.text)}
-                  className={styles.editButton}
-                >
-                  Edit
-                </button>
+                {onEditSegment && (
+                  <button
+                    onClick={() => startEdit(message.id, message.speaker, message.text)}
+                    className={styles.editButton}
+                  >
+                    Edit
+                  </button>
+                )}
               </>
             )}
             </div>
