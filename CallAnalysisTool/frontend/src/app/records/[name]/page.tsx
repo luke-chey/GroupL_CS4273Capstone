@@ -127,7 +127,7 @@ export default function DispatcherDetailPage() {
       <div className="container mx-auto p-6">
         <p>Dispatcher not found.</p>
         <Link href="/records" className="text-blue-500 hover:underline">
-          Back to Records
+          Back to Dispatchers
         </Link>
       </div>
     );

@@ -86,28 +86,7 @@ export default function PlayerController({
 
     // converting audio file name to json
     const baseName = fileName.replace(/\.[^/.]+$/, "");
-    const transcriptUrl = `/transcripts/${baseName}.json`;
-
-    fetch(transcriptUrl)
-      .then((response) => {
-        if (!response.ok) {
-          // Don't throw - just log and return
-          console.warn(
-            `Transcript not found for ${fileName} at ${transcriptUrl}`
-          );
-          return null;
-        }
-        return response.json();
-      })
-      .then((data) => {
-        if (data) {
-          setTranscription(data);
-        }
-      })
-      .catch((error) => {
-        // Catch any errors and log them instead of crashing
-        console.error("Error fetching transcript:", error);
-      });
+    
   }, [fileName, transcriptionLoaded]); // Added transcriptionLoaded to dependencies
 
   return (

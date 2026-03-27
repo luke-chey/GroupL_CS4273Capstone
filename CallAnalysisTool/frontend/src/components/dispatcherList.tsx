@@ -109,8 +109,8 @@ const DispatcherList = () => {
     grade >= 80
       ? "text-green-600"
       : grade >= 50
-      ? "text-yellow-500"
-      : "text-red-600";
+        ? "text-yellow-500"
+        : "text-red-600";
 
   return (
     <div className="container mx-auto p-4 sm:p-6 max-w-7xl">
@@ -144,15 +144,10 @@ const DispatcherList = () => {
                   <span className="absolute top-2 right-2 bg-yellow-400 text-white text-xs font-bold px-2 py-1 mb-1 rounded-full">
                     Rank #{index + 1}
                   </span>
-                  <CardHeader className="flex-shrink-0">
+                  <CardContent className="flex-grow flex flex-col justify-between">
                     <CardTitle className="text-lg font-semibold break-words">
                       {dispatcher.name}
                     </CardTitle>
-                    <CardDescription className="text-xs truncate">
-                      ID: {dispatcher.id.substring(0, 8)}...
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="flex-grow flex flex-col justify-between">
                     <p
                       className={`font-semibold mt-2 ${gradeColor(
                         dispatcher.overallGrade

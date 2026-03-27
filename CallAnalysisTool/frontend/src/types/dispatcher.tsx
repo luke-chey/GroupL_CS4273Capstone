@@ -20,6 +20,14 @@ export interface FileGrade {
   };
 }
 
+export interface FileParts {
+  name: string;
+  dateTime: Date;
+  nature: string;
+  description: string;
+  extension: string;
+}
+
 export interface DispatcherRecord {
   name: string;
   audioFile?: string;

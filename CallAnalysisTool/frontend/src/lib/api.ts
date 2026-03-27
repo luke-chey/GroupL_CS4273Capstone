@@ -1,20 +1,18 @@
 import type { DispatcherRecord, FileGrade } from "@/types/dispatcher";
 
 const API_PORT = process.env.NEXT_PUBLIC_API_PORT || "5001";
+const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
 export function getApiBaseUrl(): string {
-  let base = `http://127.0.0.1:${API_PORT}`
-
-  if (process.env.NEXT_PUBLIC_API_URL) {
-    base = process.env.NEXT_PUBLIC_API_URL;
+  if (API_URL) {
+    return API_URL;
   }
 
   if (typeof window !== "undefined") {
-    base = `${window.location.protocol}//${window.location.hostname}:${API_PORT}`;
+    return `${window.location.protocol}//${window.location.hostname}:${API_PORT}`;
   }
 
-  console.log(base);
-  return base;
+  return `http://127.0.0.1:${API_PORT}`;
 }
 
 export interface ApiResponse {
