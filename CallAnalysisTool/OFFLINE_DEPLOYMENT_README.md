@@ -3,6 +3,13 @@
 This guide explains how to import prebuilt Docker images and volumes,
 then start the application in offline mode.
 
+The offline artifact for this project is:
+
+- Docker images
+- Named Docker volumes containing cached AI models
+
+The application is not fully offline from images alone.
+
 ------------------------------------------------------------------------
 
 ## Prerequisites
@@ -14,7 +21,8 @@ then start the application in offline mode.
     -   `offline_backup/`
         -   Contains all exported images (`callanalysistool-*-latest.tar.gz`)
         -   Contains all exported volumes (`callanalysistool_*.tar.gz`)
-    -   `import_all.sh`
+-   `.env`
+-   `import_all.sh`
     -   `docker-compose.yml`
 - **No other source code required**
 
@@ -40,8 +48,8 @@ C:/ou_transfer/
 
 4.  When prompted, choose to install **IMAGES ONLY**.
 
-Do not install volumes yet. Volumes depend on the images (specifically
-`ubuntu`) being present.
+Do not install volumes yet. Volume restore depends on the `ubuntu` image
+being present.
 
 ------------------------------------------------------------------------
 
@@ -72,16 +80,20 @@ In Docker Desktop:
 
 ------------------------------------------------------------------------
 
-## Step 4 - Configure docker-compose.yml
+## Step 4 - Configure Environment
 
-1.  Open `docker-compose.yml`.
-2.  Scroll to the bottom where the `volumes:` definitions are located.
-3.  Ensure:
-    -   Only the offline deployment `volumes:` block is uncommented.
-    -   The `name:` values match the volume names shown in Docker
-        Desktop exactly.
+1.  Open `.env`.
+2.  Ensure these values are correct:
+    -   `HF_HUB_OFFLINE=1`
+    -   `TRANSFORMERS_OFFLINE=1`
+    -   `OLLAMA_MODEL=llama3.1:8b`
 
-If they do not match, update the `name:` values to match Docker Desktop.
+The Compose file already uses the correct fixed Docker volume names:
+
+-   `callanalysistool_ollama_data`
+-   `callanalysistool_whisperx_cache`
+-   `callanalysistool_models_data`
+-   `callanalysistool_torch_cache`
 
 ------------------------------------------------------------------------
 
@@ -97,8 +109,8 @@ If they do not match, update the `name:` values to match Docker Desktop.
     docker compose up
     ```
 
-The containers should attach to the imported images and volumes, and the
-application should start.
+The containers should attach to the imported images and model-cache
+volumes, and then start the application.
 
 ------------------------------------------------------------------------
 
@@ -110,4 +122,4 @@ http://localhost:3000
 
 The application should now be running fully offline.
 
-*- Luke Chey, 2/26/26*
+*- Luke Chey, 3/27/26*

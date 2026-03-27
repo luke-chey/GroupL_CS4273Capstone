@@ -5,6 +5,9 @@ import torch
 import gc
 from whisperx.diarize import DiarizationPipeline
 
+def in_docker():
+    return os.path.exists("/.dockerenv")
+
 def normalize_dispatcher_name(name):
     """
     Normalize a dispatcher name for transcript speaker labels.
@@ -131,7 +134,10 @@ def speaker_separation(audio_path, transcript_path, output_dir, dispatcher_name=
 
     # Diarizing audio
     print("Diarizing audio")
-    diarize_model = DiarizationPipeline(use_auth_token=os.getenv('HF_TOKEN'), device=DEVICE)
+    if not in_docker():
+        diarize_model = DiarizationPipeline(use_auth_token=os.getenv('HF_TOKEN'), device=DEVICE)
+    else:
+        diarize_model = DiarizationPipeline(device=DEVICE)
     diarize_segments = diarize_model(audio, min_speakers=2, max_speakers=2)
     result = whisperx.assign_word_speakers(diarize_segments, result)
 
