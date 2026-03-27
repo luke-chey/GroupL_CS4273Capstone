@@ -90,12 +90,8 @@ const DispatcherDetails = ({
   const [batchPages, setBatchPages] = useState<BatchPage[]>([]);
   const [currentGradeIndex, setCurrentGradeIndex] = useState(0);
 
-  // Live grade refreshed after regrading
-  const [liveGrade, setLiveGrade] = useState<any>(null);
-  // Increment to force PlayerController remount → re-fetches transcript from disk
+  // Increment to force PlayerController remount 
   const [audioKey, setAudioKey] = useState(0);
-  const [regrading, setRegrading] = useState(false);
-  const [regradeMessage, setRegradeMessage] = useState("");
 
   const loadLocalData = () => {
     setDispatchers(parseStoredDispatchers(localStorage.getItem("dispatchers")));
@@ -146,19 +142,12 @@ const DispatcherDetails = ({
   const activeGrades = activeDispatcher?.grades || {};
   const currentTranscriptFile = currentPage?.transcriptFilename;
 
-  // Use live grade after regrading, otherwise fall back to stored grade
-  const currentFileGrade = liveGrade ?? (currentTranscriptFile ? activeGrades[currentTranscriptFile] : undefined);
+  const currentFileGrade = currentTranscriptFile ? activeGrades[currentTranscriptFile] : undefined;
 
   // Tell parent which transcript file is active (for save URL)
   useEffect(() => {
     onTranscriptFileChange?.(currentTranscriptFile ?? null);
   }, [currentTranscriptFile, onTranscriptFileChange]);
-
-  // Reset live grade and regrade message when switching transcripts
-  useEffect(() => {
-    setLiveGrade(null);
-    setRegradeMessage("");
-  }, [currentTranscriptFile]);
 
   // Load transcript when selected file changes
   useEffect(() => {
@@ -178,70 +167,28 @@ const DispatcherDetails = ({
     loadTranscript();
   }, [currentTranscriptFile, setTranscriptData]);
 
-  // Extract dispatcher name from filename: YYYYMMDD_HHMMSS_name → "name"
+  // Extract dispatcher name from filename: 
   const dispatcherNameFromFile = useMemo(() => {
     if (!currentTranscriptFile) return activeDispatcher?.name || dispatcher.name;
     const parts = baseName(currentTranscriptFile).split("_");
     return parts.length >= 3 ? parts.slice(2).join("_") : (activeDispatcher?.name || dispatcher.name);
   }, [currentTranscriptFile, activeDispatcher, dispatcher.name]);
 
-  // Save transcript → regrade → refresh audio box
+  // Save transcript then refresh audio box
   const handleSaveAndRegrade = useCallback(async () => {
-    // 1. Save
     await onSaveTranscript();
-
-    if (!currentTranscriptFile) return;
-    const key = baseName(currentTranscriptFile);
-
-    // 2. Regrade — POST full transcript body to /api/grade
-    try {
-      setRegrading(true);
-      setRegradeMessage("Regrading...");
-
-      const res = await fetch("http://localhost:5001/api/grade", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(transcriptData),
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        // Map response into the shape the grading card expects
-        const per_question: Record<string, { label: string; status: string }> = {};
-        for (const [qId, grade] of Object.entries(data.grades ?? {})) {
-          const g = grade as any;
-          per_question[qId] = {
-            label: g.question ?? qId,
-            status: g.status ?? (["1","6"].includes(g.code) ? "Asked Correctly" : "Not Asked"),
-          };
-        }
-        setLiveGrade({
-          grade_percentage: data.grade_percentage,
-          detected_nature_code: data.detected_nature_code,
-          per_question,
-        });
-        setRegradeMessage("Regraded successfully.");
-      } else {
-        const err = await res.json().catch(() => ({}));
-        setRegradeMessage(`Saved. Regrading failed: ${err.error ?? res.statusText}`);
-      }
-    } catch {
-      setRegradeMessage("Saved. Could not reach grading service.");
-    } finally {
-      setRegrading(false);
-      // 3. Force audio box PlayerController to remount and re-fetch from disk
-      setAudioKey((k) => k + 1);
-    }
-  }, [onSaveTranscript, currentTranscriptFile, transcriptData]);
+    // Force PlayerController to remount 
+    setAudioKey((k) => k + 1);
+  }, [onSaveTranscript]);
 
   const matchedAudioFile = currentTranscriptFile
     ? activeAudioFiles.find((f) => baseName(f) === baseName(currentTranscriptFile))
     : undefined;
 
   const overallGrade = calculateOverallGrade(activeTranscriptFiles, activeGrades);
-  const isBusy = savingTranscript || regrading;
+  const isBusy = savingTranscript;
 
-  const statusMessage = [saveMessage, regradeMessage].filter(Boolean).join(" ");
+  const statusMessage = saveMessage;
   const isError = statusMessage.toLowerCase().includes("fail") || statusMessage.toLowerCase().includes("error");
 
   return (
@@ -347,7 +294,7 @@ const DispatcherDetails = ({
             {matchedAudioFile ? (
               <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
                 <p className="text-sm font-medium">{matchedAudioFile}</p>
-                {/* Changing key forces remount , PlayerController re-fetches from backend */}
+                {/* Changing key forces remount,  PlayerController re-fetches from backend */}
                 <PlayerController
                   key={audioKey}
                   transcriptionId={baseName(matchedAudioFile)}
@@ -370,7 +317,7 @@ const DispatcherDetails = ({
           <CardHeader>
             <CardTitle>Transcript Editor</CardTitle>
             <CardDescription>
-              Edit speaker labels and message text — saving will also regrade this call
+              Edit transcript text and speaker labels — audio view updates on save
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -383,7 +330,7 @@ const DispatcherDetails = ({
                     disabled={isBusy || !transcriptData}
                     className="rounded bg-blue-600 px-5 py-2 text-white font-medium disabled:opacity-50 hover:bg-blue-700 transition-colors"
                   >
-                    {savingTranscript ? "Saving..." : regrading ? "Regrading..." : "Save & Regrade"}
+                    {savingTranscript ? "Saving..." : "Save Transcript"}
                   </button>
                   {statusMessage && (
                     <p className={`text-sm font-medium ${isError ? "text-red-600" : "text-green-600"}`}>
