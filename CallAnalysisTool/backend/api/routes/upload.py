@@ -3,8 +3,8 @@ import json
 import os
 import re
 import shutil
-import tempfile
 import zipfile
+import uuid
 from datetime import datetime
 from pathlib import Path
 
@@ -184,144 +184,157 @@ def upload():
         date = time = agent_name = (None,) * 3
         cdr_path = audio_path = transcript_path = grades_path = nature_code = (None,) * 5
         transcript_data = None
-        with tempfile.TemporaryDirectory() as temp_dir:
-            TEMP_PATH = Path(temp_dir)
 
-            if is_zip:
-                print("Processing zip")
-                # Unzip
-                zip_path = TEMP_PATH / filename
-                file.save(str(zip_path))
-                with zipfile.ZipFile(zip_path, "r") as zip_ref:
-                    zip_ref.extractall(TEMP_PATH)
+        temp_dir = OUTPUT_DIR / "_tmp" / str(uuid.uuid4().hex)
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        TEMP_PATH = Path(temp_dir)
 
-                # Find cdr file
-                txt_files = list(TEMP_PATH.glob("*.txt"))
-                if txt_files:
-                    cdr_path = txt_files[0]
-                    print(f"CDR file found: {cdr_path}")
-                else:
-                    return jsonify({'error': 'No cdr file detected'}), 400
+        if is_zip:
+            print("Processing zip")
+            # Unzip
+            zip_path = TEMP_PATH / filename
+            file.save(str(zip_path))
+            with zipfile.ZipFile(zip_path, "r") as zip_ref:
+                zip_ref.extractall(TEMP_PATH)
 
-                # Find audio file
-                wav_files = list(TEMP_PATH.glob("*.wav"))
-                if wav_files:
-                    audio_path = wav_files[0]
-                    print(f"Audio file found: {audio_path}")
-                else:
-                    return jsonify({'error': 'No audio file detected'}), 400
-
-                # Parse cdr file
-                date, time, agent_name = extract_info_from_cdr(cdr_path)
-                print(f"Info extracted from CDR: Date={date}, Time={time}, Agent={agent_name}")
-
-                # Transcribe audio file
-                transcriber = get_transcriber()
-                print(f"Beginning transcription of {audio_path}")
-                result = transcriber.transcribe(str(audio_path))
-
-                # Save transcript
-                raw_transcript_path = TEMP_PATH / "raw_transcript.json"
-                with open(raw_transcript_path, 'w', encoding='utf-8') as f:
-                    json.dump(result, f, indent=2, ensure_ascii=False)
-                print(f"Transcription finished, saved to: {raw_transcript_path}")
-
-                # Do speaker separation
-                print("Separating speakers")
-                transcript_path = speaker_separation(
-                    audio_path,
-                    raw_transcript_path,
-                    TEMP_PATH,
-                    dispatcher_name=agent_name,
-                    date_str=date,
-                    time_str=time,
-                )
-                print(f"Speaker separation finished, saved to: {transcript_path}")
-                
-                # Get data again
-                with open(transcript_path, "r") as f:
-                    transcript_data = json.load(f)
-
-            elif is_json:
-                print("Processing json")
-                # Read json data from request
-                transcript_data = request.get_json()
-                date = transcript_data.get("date")
-                time = transcript_data.get("time")
-                agent_name = (transcript_data.get("agent_name") or (transcript_data.get("speakers", [None])[0]))
-                print(f"Info extracted from transcript: Date={date}, Time={time}, Agent={agent_name}")
-
+            # Find cdr file
+            txt_files = list(TEMP_PATH.glob("*.txt"))
+            if txt_files:
+                cdr_path = txt_files[0]
+                print(f"CDR file found: {cdr_path}")
             else:
-                print("Both is_zip and is_json False")
-                return jsonify({'error': 'No file or json provided'}), 400
-            
-            # Get nature code
-            # Convert JSON to text format
-            transcript_text = json_to_text(transcript_path)
-            
-            # Detect nature codes with sentence transformer
-            print("Detecting possible nature codes using sentence transformer")
-            nature_codes_text = detect_nature_codes_in_memory(transcript_path)
-            
-            # Get final nature code using AI
-            print("Getting final nature code using AI")
-            nature_code = identify_nature_code(nature_codes_text, transcript_text)
-            if nature_code is not None:
-                print(f"Final nature code: {nature_code}")
+                return jsonify({'error': 'No cdr file detected'}), 400
+
+            # Find audio file
+            wav_files = list(TEMP_PATH.glob("*.wav"))
+            if wav_files:
+                audio_path = wav_files[0]
+                print(f"Audio file found: {audio_path}")
             else:
-                print("Nature code not found")
-                raise RuntimeError("Nature code could not be detected")
+                return jsonify({'error': 'No audio file detected'}), 400
+
+            # Parse cdr file
+            date, time, agent_name = extract_info_from_cdr(cdr_path)
+            print(f"Info extracted from CDR: Date={date}, Time={time}, Agent={agent_name}")
+
+            # Transcribe audio file
+            transcriber = get_transcriber()
+            print(f"Beginning transcription of {audio_path}")
+            result = transcriber.transcribe(str(audio_path))
+
+            # Save transcript
+            raw_transcript_path = TEMP_PATH / "raw_transcript.json"
+            with open(raw_transcript_path, 'w', encoding='utf-8') as f:
+                json.dump(result, f, indent=2, ensure_ascii=False)
+            print(f"Transcription finished, saved to: {raw_transcript_path}")
+
+            # Do speaker separation
+            print("Separating speakers")
+            transcript_path = speaker_separation(
+                audio_path,
+                raw_transcript_path,
+                TEMP_PATH,
+                dispatcher_name=agent_name,
+                date_str=date,
+                time_str=time,
+            )
+            print(f"Speaker separation finished, saved to: {transcript_path}")
             
-            # Get grades
-            response, grades_path = grade_transcript(nature_code, transcript_path, TEMP_PATH)
+            # Get data again
+            with open(transcript_path, "r") as f:
+                transcript_data = json.load(f)
 
-            # Create destination folder and move everything there
-            # Base output directory
-            base_dir = Path(OUTPUT_DIR)
+        elif is_json:
+            print("Processing json")
+            # Read json data from request
+            transcript_data = request.get_json()
+            date = transcript_data.get("date")
+            time = transcript_data.get("time")
+            agent_name = (transcript_data.get("agent_name") or (transcript_data.get("speakers", [None])[0]))
+            print(f"Info extracted from transcript: Date={date}, Time={time}, Agent={agent_name}")
 
-            # Create folder: output/{agent_name}/{date}_{time}_{nature_code}/
-            dest_dir = base_dir / agent_name / f"{date}_{time}_{nature_code}"
-            dest_dir = sanitize_filepath(dest_dir, replacement_text="-")
-            dest_dir.mkdir(parents=True, exist_ok=True)
+        else:
+            print("Both is_zip and is_json False")
+            return jsonify({'error': 'No file or json provided'}), 400
+        
+        # Get nature code
+        # Convert JSON to text format
+        transcript_text = json_to_text(transcript_path)
+        
+        # Detect nature codes with sentence transformer
+        print("Detecting possible nature codes using sentence transformer")
+        nature_codes_text = detect_nature_codes_in_memory(transcript_path)
+        
+        # Get final nature code using AI
+        print("Getting final nature code using AI")
+        nature_code = identify_nature_code(nature_codes_text, transcript_text)
+        if nature_code is not None:
+            print(f"Final nature code: {nature_code}")
+        else:
+            print("Nature code not found")
+            raise RuntimeError("Nature code could not be detected")
+        
+        # Get grades
+        response, grades_path = grade_transcript(nature_code, transcript_path, TEMP_PATH)
 
-            # Build base filename prefix
-            base_name = f"{agent_name}_{date}_{time}_{nature_code}"
+        # Create destination folder and move everything there
+        # Base output directory
+        base_dir = Path(OUTPUT_DIR)
 
-            # Source paths
-            cdr_src = Path(cdr_path)
-            audio_src = Path(audio_path)
-            transcript_src = Path(transcript_path)
-            grades_src = Path(grades_path)
+        # Create folder: output/{agent_name}/{date}_{time}_{nature_code}/
+        dest_dir = base_dir / agent_name / f"{date}_{time}_{nature_code}"
+        dest_dir = sanitize_filepath(dest_dir, replacement_text="-")
+        dest_dir.mkdir(parents=True, exist_ok=True)
 
-            # Destination paths (preserve correct extensions and sanitize)
-            cdr_dst = dest_dir / f"{base_name}_cdr{cdr_src.suffix}"
-            cdr_dst = sanitize_filepath(cdr_dst, replacement_text="-")
+        # Build base filename prefix
+        base_name = f"{agent_name}_{date}_{time}_{nature_code}"
 
-            audio_dst = dest_dir / f"{base_name}_audio{audio_src.suffix}"
-            audio_dst = sanitize_filepath(audio_dst, replacement_text="-")
+        # Source paths
+        cdr_src = Path(cdr_path)
+        audio_src = Path(audio_path)
+        transcript_src = Path(transcript_path)
+        grades_src = Path(grades_path)
 
-            transcript_dst = dest_dir / f"{base_name}_transcript{transcript_src.suffix}"
-            transcript_dst = sanitize_filepath(transcript_dst, replacement_text="-")
+        # Destination paths (preserve correct extensions and sanitize)
+        cdr_dst = dest_dir / f"{base_name}_cdr{cdr_src.suffix}"
+        cdr_dst = sanitize_filepath(cdr_dst, replacement_text="-")
 
-            grades_dst = dest_dir / f"{base_name}_grades{grades_src.suffix}"
-            grades_dst = sanitize_filepath(grades_dst, replacement_text="-")
+        audio_dst = dest_dir / f"{base_name}_audio{audio_src.suffix}"
+        audio_dst = sanitize_filepath(audio_dst, replacement_text="-")
 
-            # Move + rename
-            if is_zip and cdr_src.exists():
-                shutil.move(cdr_src, cdr_dst)
-            if is_zip and audio_src.exists():
-                shutil.move(audio_src, audio_dst)
-            if transcript_src.exists():
-                shutil.move(transcript_src, transcript_dst)
-            if grades_src.exists():
-                shutil.move(grades_src, grades_dst)
+        transcript_dst = dest_dir / f"{base_name}_transcript{transcript_src.suffix}"
+        transcript_dst = sanitize_filepath(transcript_dst, replacement_text="-")
 
-            # Return destination folder with grades data
-            return jsonify({
-                'outputDestination': str(dest_dir),
-                'dispatcherName': agent_name,
-                'grades': response,
-            })
+        grades_dst = dest_dir / f"{base_name}_grades{grades_src.suffix}"
+        grades_dst = sanitize_filepath(grades_dst, replacement_text="-")
+
+        # Source/dest dict
+        source_dest_dict = {
+            cdr_src: cdr_dst,
+            audio_src: audio_dst,
+            transcript_src: transcript_dst,
+            grades_src: grades_dst
+        }
+
+        # Move + rename
+        for src, dst in source_dest_dict.items():
+            try:
+                os.replace(src, dst)
+            except Exception as e:
+                print(f"Failed to move '{src}' to '{dst}': {e}")
+
+        # Remove temp directory
+        try:
+            shutil.rmtree(TEMP_PATH)
+        except Exception as e:
+            print(f"Failed to remove temp directory '{TEMP_PATH}': {e}")
+
+        # Return destination folder with grades data
+        return jsonify({
+            'outputDestination': str(dest_dir),
+            'dispatcherName': agent_name,
+            'grades': response,
+        })
     except Exception as e:
         import traceback
         traceback.print_exc()
