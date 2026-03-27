@@ -20,21 +20,25 @@ ARG DOCKER_CONTAINER=true
 ARG OLLAMA_HOST=http://ollama:11434/
 ARG FLASK_ENV=production
 ARG PORT=5001
+ARG TRANSFORMERS_OFFLINE=1
+ARG HF_HUB_OFFLINE=1
 
 # Set environment variables
 ENV NLTK_DATA=${NLTK_DATA}
-# Create directory
+ENV DOCKER_CONTAINER=${DOCKER_CONTAINER}
+ENV OLLAMA_HOST=${OLLAMA_HOST}
+ENV FLASK_ENV=${FLASK_ENV}
+ENV PORT=${PORT}
+ENV TRANSFORMERS_OFFLINE=${TRANSFORMERS_OFFLINE}
+ENV HF_HUB_OFFLINE=${HF_HUB_OFFLINE}
+
+# Create directory for nltk
 RUN mkdir -p /usr/local/share/nltk_data
 # Download punkt into that directory at build time
 RUN python -m nltk.downloader -d /usr/local/share/nltk_data punkt_tab
 
 # Copy application code
 COPY . .
-
-ENV DOCKER_CONTAINER=${DOCKER_CONTAINER}
-ENV OLLAMA_HOST=${OLLAMA_HOST}
-ENV FLASK_ENV=${FLASK_ENV}
-ENV PORT=${PORT}
 
 EXPOSE 5001
 

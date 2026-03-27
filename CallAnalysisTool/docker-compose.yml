@@ -3,12 +3,15 @@ services:
     image: callanalysistool-frontend:latest
     build:
       context: ./frontend
+      dockerfile: Dockerfile.node
       args:
         NODE_ENV: ${NODE_ENV}
         PORT: ${PORT_FRONTEND}
+        NEXT_PUBLIC_API_PORT: ${NEXT_PUBLIC_API_PORT}
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
     restart: unless-stopped
     ports:
-      - 3000:3000
+      - "${PORT_FRONTEND:-3000}:3000"
 
   ollama:
     image: callanalysistool-ollama:latest
@@ -16,16 +19,19 @@ services:
       context: ./backend
       dockerfile: Dockerfile.ollama
       args:
-        TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD: ${TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD}
         OLLAMA_HOST: ${OLLAMA_HOST_OLLAMA}
+        OLLAMA_MODEL: ${OLLAMA_MODEL}
     restart: unless-stopped
     ports:
-      - "11434:11434"
+      - "${PORT_OLLAMA:-11434}:11434"
     environment:
-      - TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=${TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD}
       - OLLAMA_HOST=${OLLAMA_HOST_OLLAMA}
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:11434"]
+      test:  [ "CMD-SHELL", "bash", "-c", "{ printf >&3 'GET / HTTP/1.0\\r\\n\\r\\n'; cat <&3; } 3<>/dev/tcp/localhost/11434 | grep 'Ollama is' || exit 1"  ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     volumes:
       - ollama_data:/root/.ollama
 
@@ -42,9 +48,11 @@ services:
         HF_HOME: ${HF_HOME}
         TRANSFORMERS_CACHE: ${TRANSFORMERS_CACHE}
         SENTENCE_TRANSFORMERS_HOME: ${SENTENCE_TRANSFORMERS_HOME}
-    restart: unless-stopped
+        HF_TOKEN: ${HF_TOKEN}
+    restart: "no"
     environment:
       - TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=${TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD}
+      - HF_TOKEN=${HF_TOKEN}
     volumes:
       - whisperx_cache:/root/.cache/huggingface
       - models_data:/app/models
@@ -63,20 +71,23 @@ services:
         PORT: ${PORT_BACKEND}
     restart: unless-stopped
     depends_on:
+      ollama:
+        condition: service_healthy
       whisper:
-        condition: service_started
+        condition: service_completed_successfully
     ports:
-      - "5001:5001"
+      - "${PORT_BACKEND:-5001}:5001"
     environment:
       - FLASK_ENV=${FLASK_ENV}
       - OLLAMA_HOST=${OLLAMA_HOST_BACKEND}
       - DOCKER_CONTAINER=${DOCKER_CONTAINER}
       - TRANSFORMERS_OFFLINE=${TRANSFORMERS_OFFLINE}
       - HF_HUB_OFFLINE=${HF_HUB_OFFLINE}
-      - HF_TOKEN=${HF_TOKEN}
       - HF_HOME=${HF_HOME}
+      - TRANSFORMERS_CACHE=${TRANSFORMERS_CACHE}
       - SENTENCE_TRANSFORMERS_HOME=${SENTENCE_TRANSFORMERS_HOME}
       - TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=${TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD}
+      - PORT=${PORT_BACKEND}
     volumes:
       - ./backend/data:/app/data:ro
       - ./backend/output:/app/output
@@ -84,24 +95,12 @@ services:
       - models_data:/app/models:ro
       - torch_cache:/root/.cache/torch
 
-# Online deployment (creates own volumes)
-# volumes:
-#   whisperx_cache:
-#   ollama_data:
-#   models_data:
-#   torch_cache:
-
-# Offline deployment (uses existing volumes, follows export naming convention)
 volumes:
   whisperx_cache:
-    external: true
     name: callanalysistool_whisperx_cache
   ollama_data:
-    external: true
     name: callanalysistool_ollama_data
   models_data:
-    external: true
     name: callanalysistool_models_data
   torch_cache:
-    external: true
     name: callanalysistool_torch_cache
