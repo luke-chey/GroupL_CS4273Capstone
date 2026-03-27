@@ -1,5 +1,5 @@
 "use client";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import Link from "next/link";
 import { Dispatcher } from "@/types/dispatcher";
 import {
@@ -18,10 +18,9 @@ interface DispatcherDetailsProps {
   transcriptData: any;
   setTranscriptData: React.Dispatch<React.SetStateAction<any>>;
   onEditSegment: (index: number, speaker: string, text: string) => void;
-  onSaveTranscript: () => void;
+  onSaveTranscript: () => Promise<void>;
   savingTranscript: boolean;
   saveMessage: string;
-  // parent page knows which filename to PUT to on save
   onTranscriptFileChange?: (filename: string | null) => void;
 }
 
@@ -37,11 +36,7 @@ interface StoredBatchData {
 
 const parseStoredDispatchers = (raw: string | null): Dispatcher[] => {
   if (!raw) return [];
-  try {
-    return JSON.parse(raw) as Dispatcher[];
-  } catch {
-    return [];
-  }
+  try { return JSON.parse(raw) as Dispatcher[]; } catch { return []; }
 };
 
 const parseStoredBatchPages = (raw: string | null): BatchPage[] => {
@@ -49,9 +44,7 @@ const parseStoredBatchPages = (raw: string | null): BatchPage[] => {
   try {
     const parsed = JSON.parse(raw) as StoredBatchData;
     return Array.isArray(parsed.pages) ? parsed.pages : [];
-  } catch {
-    return [];
-  }
+  } catch { return []; }
 };
 
 const buildFallbackPages = (dispatcher: Dispatcher): BatchPage[] => {
@@ -97,6 +90,13 @@ const DispatcherDetails = ({
   const [batchPages, setBatchPages] = useState<BatchPage[]>([]);
   const [currentGradeIndex, setCurrentGradeIndex] = useState(0);
 
+  // Live grade refreshed after regrading
+  const [liveGrade, setLiveGrade] = useState<any>(null);
+  // Increment to force PlayerController remount → re-fetches transcript from disk
+  const [audioKey, setAudioKey] = useState(0);
+  const [regrading, setRegrading] = useState(false);
+  const [regradeMessage, setRegradeMessage] = useState("");
+
   const loadLocalData = () => {
     setDispatchers(parseStoredDispatchers(localStorage.getItem("dispatchers")));
     setBatchPages(parseStoredBatchPages(localStorage.getItem("latestUploadBatch")));
@@ -117,11 +117,10 @@ const DispatcherDetails = ({
   }, [dispatchers, dispatcher]);
 
   const pagesFromBatch = useMemo(
-    () =>
-      batchPages.filter((page) => {
-        const d = dispatcherMap.get(page.dispatcherId);
-        return Boolean(d?.grades?.[page.transcriptFilename]);
-      }),
+    () => batchPages.filter((page) => {
+      const d = dispatcherMap.get(page.dispatcherId);
+      return Boolean(d?.grades?.[page.transcriptFilename]);
+    }),
     [batchPages, dispatcherMap]
   );
 
@@ -132,67 +131,122 @@ const DispatcherDetails = ({
   }, [pagesFromBatch, dispatcher, batchMode]);
 
   useEffect(() => {
-    if (activePages.length === 0) {
-      setCurrentGradeIndex(0);
-      return;
-    }
+    if (activePages.length === 0) { setCurrentGradeIndex(0); return; }
     const startIndex = activePages.findIndex((p) => p.dispatcherId === dispatcher.id);
     setCurrentGradeIndex(startIndex >= 0 ? startIndex : 0);
   }, [dispatcher.id, activePages]);
 
   const safeIndex = activePages.length > 0
-    ? Math.min(currentGradeIndex, activePages.length - 1)
-    : 0;
+    ? Math.min(currentGradeIndex, activePages.length - 1) : 0;
 
   const currentPage = activePages[safeIndex];
-  const activeDispatcher = currentPage
-    ? dispatcherMap.get(currentPage.dispatcherId)
-    : dispatcher;
+  const activeDispatcher = currentPage ? dispatcherMap.get(currentPage.dispatcherId) : dispatcher;
   const activeTranscriptFiles = activeDispatcher?.files?.transcriptFiles || [];
   const activeAudioFiles = activeDispatcher?.files?.audioFiles || [];
   const activeGrades = activeDispatcher?.grades || {};
   const currentTranscriptFile = currentPage?.transcriptFilename;
-  const currentFileGrade = currentTranscriptFile
-    ? activeGrades[currentTranscriptFile]
-    : undefined;
 
-  // Notify parent whenever the active transcript file changes
+  // Use live grade after regrading, otherwise fall back to stored grade
+  const currentFileGrade = liveGrade ?? (currentTranscriptFile ? activeGrades[currentTranscriptFile] : undefined);
+
+  // Tell parent which transcript file is active (for save URL)
   useEffect(() => {
     onTranscriptFileChange?.(currentTranscriptFile ?? null);
   }, [currentTranscriptFile, onTranscriptFileChange]);
 
+  // Reset live grade and regrade message when switching transcripts
+  useEffect(() => {
+    setLiveGrade(null);
+    setRegradeMessage("");
+  }, [currentTranscriptFile]);
+
+  // Load transcript when selected file changes
   useEffect(() => {
     const loadTranscript = async () => {
       if (!currentTranscriptFile) return;
-
       try {
-        const filenameKey = currentTranscriptFile.replace(/\.json$/, "");
-        const response = await fetch(
-          `http://localhost:5001/api/transcriptions/${filenameKey}`
-        );
-        if (!response.ok) throw new Error("Failed to load transcript");
-        const data = await response.json();
-        // The GET endpoint returns { success, data: { segments, ... } }
+        const key = baseName(currentTranscriptFile);
+        const res = await fetch(`http://localhost:5001/api/transcriptions/${key}`);
+        if (!res.ok) throw new Error("Failed to load transcript");
+        const data = await res.json();
         setTranscriptData(data.data ?? data);
-      } catch (error) {
-        console.error("Error loading transcript:", error);
+      } catch (err) {
+        console.error("Error loading transcript:", err);
         setTranscriptData(null);
       }
     };
-
     loadTranscript();
   }, [currentTranscriptFile, setTranscriptData]);
 
+  // Extract dispatcher name from filename: YYYYMMDD_HHMMSS_name → "name"
+  const dispatcherNameFromFile = useMemo(() => {
+    if (!currentTranscriptFile) return activeDispatcher?.name || dispatcher.name;
+    const parts = baseName(currentTranscriptFile).split("_");
+    return parts.length >= 3 ? parts.slice(2).join("_") : (activeDispatcher?.name || dispatcher.name);
+  }, [currentTranscriptFile, activeDispatcher, dispatcher.name]);
+
+  // Save transcript → regrade → refresh audio box
+  const handleSaveAndRegrade = useCallback(async () => {
+    // 1. Save
+    await onSaveTranscript();
+
+    if (!currentTranscriptFile) return;
+    const key = baseName(currentTranscriptFile);
+
+    // 2. Regrade — POST full transcript body to /api/grade
+    try {
+      setRegrading(true);
+      setRegradeMessage("Regrading...");
+
+      const res = await fetch("http://localhost:5001/api/grade", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(transcriptData),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        // Map response into the shape the grading card expects
+        const per_question: Record<string, { label: string; status: string }> = {};
+        for (const [qId, grade] of Object.entries(data.grades ?? {})) {
+          const g = grade as any;
+          per_question[qId] = {
+            label: g.question ?? qId,
+            status: g.status ?? (["1","6"].includes(g.code) ? "Asked Correctly" : "Not Asked"),
+          };
+        }
+        setLiveGrade({
+          grade_percentage: data.grade_percentage,
+          detected_nature_code: data.detected_nature_code,
+          per_question,
+        });
+        setRegradeMessage("Regraded successfully.");
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setRegradeMessage(`Saved. Regrading failed: ${err.error ?? res.statusText}`);
+      }
+    } catch {
+      setRegradeMessage("Saved. Could not reach grading service.");
+    } finally {
+      setRegrading(false);
+      // 3. Force audio box PlayerController to remount and re-fetch from disk
+      setAudioKey((k) => k + 1);
+    }
+  }, [onSaveTranscript, currentTranscriptFile, transcriptData]);
+
   const matchedAudioFile = currentTranscriptFile
-    ? activeAudioFiles.find(
-        (audioFile) => baseName(audioFile) === baseName(currentTranscriptFile)
-      )
+    ? activeAudioFiles.find((f) => baseName(f) === baseName(currentTranscriptFile))
     : undefined;
 
   const overallGrade = calculateOverallGrade(activeTranscriptFiles, activeGrades);
+  const isBusy = savingTranscript || regrading;
+
+  const statusMessage = [saveMessage, regradeMessage].filter(Boolean).join(" ");
+  const isError = statusMessage.toLowerCase().includes("fail") || statusMessage.toLowerCase().includes("error");
 
   return (
     <div className="container mx-auto p-6">
+      {/* Page header */}
       <div className="mb-6">
         <Link href="/records" className="text-blue-500 hover:underline mb-4 inline-block">
           ← Back to Records
@@ -212,7 +266,7 @@ const DispatcherDetails = ({
           <div className="mt-4 flex items-center gap-3">
             <button
               type="button"
-              onClick={() => setCurrentGradeIndex((prev) => Math.max(prev - 1, 0))}
+              onClick={() => setCurrentGradeIndex((p) => Math.max(p - 1, 0))}
               disabled={safeIndex === 0}
               className="px-3 py-2 rounded-md border border-gray-300 text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
             >
@@ -223,9 +277,7 @@ const DispatcherDetails = ({
             </p>
             <button
               type="button"
-              onClick={() =>
-                setCurrentGradeIndex((prev) => Math.min(prev + 1, activePages.length - 1))
-              }
+              onClick={() => setCurrentGradeIndex((p) => Math.min(p + 1, activePages.length - 1))}
               disabled={safeIndex === activePages.length - 1}
               className="px-3 py-2 rounded-md border border-gray-300 text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
             >
@@ -235,7 +287,9 @@ const DispatcherDetails = ({
         )}
       </div>
 
+      {/* Top row: Grading + Audio */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Transcript Grading */}
         <Card>
           <CardHeader>
             <CardTitle>Transcript Grading</CardTitle>
@@ -258,15 +312,13 @@ const DispatcherDetails = ({
                       ([key, question]: [string, any]) => (
                         <li key={key} className="flex justify-between text-sm">
                           <span>{question.label}</span>
-                          <span
-                            className={
-                              question.status === "Asked Correctly" || question.status === "Obvious"
-                                ? "text-green-600 font-semibold"
-                                : question.status === "Not As Scripted"
-                                ? "text-yellow-500 font-semibold"
-                                : "text-red-600 font-semibold"
-                            }
-                          >
+                          <span className={
+                            question.status === "Asked Correctly" || question.status === "Obvious"
+                              ? "text-green-600 font-semibold"
+                              : question.status === "Not As Scripted"
+                              ? "text-yellow-500 font-semibold"
+                              : "text-red-600 font-semibold"
+                          }>
                             {question.status}
                           </span>
                         </li>
@@ -283,6 +335,7 @@ const DispatcherDetails = ({
           </CardContent>
         </Card>
 
+        {/* Audio File — read-only, remounts after save to show updated transcript */}
         <Card>
           <CardHeader>
             <CardTitle>Audio File</CardTitle>
@@ -294,7 +347,11 @@ const DispatcherDetails = ({
             {matchedAudioFile ? (
               <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
                 <p className="text-sm font-medium">{matchedAudioFile}</p>
-                <PlayerController transcriptionId={baseName(matchedAudioFile)} />
+                {/* Changing key forces remount , PlayerController re-fetches from backend */}
+                <PlayerController
+                  key={audioKey}
+                  transcriptionId={baseName(matchedAudioFile)}
+                />
               </div>
             ) : currentTranscriptFile ? (
               <p className="text-gray-500">No matching audio file.</p>
@@ -307,38 +364,44 @@ const DispatcherDetails = ({
         </Card>
       </div>
 
+      {/* Transcript Editor */}
       <div className="mt-6">
         <Card>
           <CardHeader>
             <CardTitle>Transcript Editor</CardTitle>
             <CardDescription>
-              Edit transcript text and speaker labels for the selected file
+              Edit speaker labels and message text — saving will also regrade this call
             </CardDescription>
           </CardHeader>
           <CardContent>
             {currentTranscriptFile ? (
               <div className="space-y-4">
+                {/* Action bar */}
                 <div className="flex items-center gap-4">
                   <button
-                    onClick={onSaveTranscript}
-                    disabled={savingTranscript || !transcriptData}
-                    className="rounded bg-blue-600 px-4 py-2 text-white disabled:opacity-50 hover:bg-blue-700 transition-colors"
+                    onClick={handleSaveAndRegrade}
+                    disabled={isBusy || !transcriptData}
+                    className="rounded bg-blue-600 px-5 py-2 text-white font-medium disabled:opacity-50 hover:bg-blue-700 transition-colors"
                   >
-                    {savingTranscript ? "Saving..." : "Save Transcript"}
+                    {savingTranscript ? "Saving..." : regrading ? "Regrading..." : "Save & Regrade"}
                   </button>
-                  {saveMessage && (
-                    <p className={`text-sm ${saveMessage.includes("successfully") ? "text-green-600" : "text-red-600"}`}>
-                      {saveMessage}
+                  {statusMessage && (
+                    <p className={`text-sm font-medium ${isError ? "text-red-600" : "text-green-600"}`}>
+                      {statusMessage}
                     </p>
                   )}
                 </div>
 
+                {/* Fixed-height scrollable editor matching audio box height */}
                 {transcriptData ? (
-                  <TranscriptPlayer
-                    transcriptData={transcriptData}
-                    currentTime={0}
-                    onEditSegment={onEditSegment}
-                  />
+                  <div className="border border-gray-200 rounded-xl overflow-hidden" style={{ height: "500px" }}>
+                    <TranscriptPlayer
+                      transcriptData={transcriptData}
+                      currentTime={0}
+                      onEditSegment={onEditSegment}
+                      dispatcherName={dispatcherNameFromFile}
+                    />
+                  </div>
                 ) : (
                   <p className="text-gray-500">Loading transcript...</p>
                 )}

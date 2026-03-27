@@ -20,10 +20,7 @@ interface TranscriptData {
   audio_file?: string;
 }
 
-export default function PlayerController({
-  transcriptionId,
-}: PlayerControllerProps) {
-  // states
+export default function PlayerController({ transcriptionId }: PlayerControllerProps) {
   const [fileName, setFileName] = useState("N/A");
   const [fileURL, setFileURL] = useState<string | null>(null);
   const [transcription, setTranscription] = useState<TranscriptData | null>(null);
@@ -33,17 +30,13 @@ export default function PlayerController({
   // Load transcription when transcriptionId is provided
   useEffect(() => {
     if (transcriptionId) {
-      // Reset state when loading new transcription
       setTranscriptionLoaded(false);
       setTranscription(null);
 
-      // Fetch transcription from the backend API
       fetch(`http://localhost:5001/api/transcriptions/${transcriptionId}`)
-        .then((response) => {
-          if (!response.ok) {
-            throw new Error(`Failed to fetch transcription`);
-          }
-          return response.json();
+        .then((res) => {
+          if (!res.ok) throw new Error("Failed to fetch transcription");
+          return res.json();
         })
         .then((data) => {
           if (data.success && data.data) {
@@ -51,125 +44,69 @@ export default function PlayerController({
             setTranscriptionLoaded(true);
             if (data.audio_file) {
               setFileURL(`http://localhost:5001/api/output/${data.audio_file}`);
-              const audioFileName =
-                data.audio_file.split("/").pop() || data.filename;
+              const audioFileName = data.audio_file.split("/").pop() || data.filename;
               if (audioFileName.endsWith(".json")) {
                 const audioFileFromData = data.data.audio_file;
-                if (audioFileFromData) {
-                  setFileName(
-                    audioFileFromData.split("/").pop() ||
-                      audioFileName.replace(".json", ".wav")
-                  );
-                } else {
-                  setFileName(audioFileName.replace(".json", ".wav"));
-                }
+                setFileName(
+                  audioFileFromData
+                    ? audioFileFromData.split("/").pop() || audioFileName.replace(".json", ".wav")
+                    : audioFileName.replace(".json", ".wav")
+                );
               } else {
                 setFileName(audioFileName);
               }
             } else if (data.filename) {
-              // Fallback: use filename but ensure it's not .json
-              const name = data.filename.endsWith(".json")
-                ? data.filename.replace(".json", ".wav")
-                : data.filename;
-              setFileName(name);
+              setFileName(
+                data.filename.endsWith(".json")
+                  ? data.filename.replace(".json", ".wav")
+                  : data.filename
+              );
             }
           }
         })
-        .catch((error) => {
-          console.error("Error loading transcription:", error);
+        .catch((err) => {
+          console.error("Error loading transcription:", err);
           setTranscriptionLoaded(false);
         });
     }
   }, [transcriptionId]);
 
-  // handlers
-  const handleGetFile = (name: string) => {
-    setFileName(name);
-    setTranscriptionLoaded(false); // Reset when manually selecting a file
-  };
-
-  const handleGetURL = (url: string) => {
-    setFileURL(url);
-  };
-
-  // extracting dispatcher name from file name
+  // Extract dispatcher name from filename for display
   const match = fileName.match(/.*_(.+)\.[^.]+$/);
   const dispatcherName = match ? match[1] : "N/A";
 
-  // sends transcription data to transcript component (only for manual file selection)
+  // Load transcript from public folder for manual file selection
   useEffect(() => {
-    // Skip if transcription was already loaded from API or if no file selected
     if (transcriptionLoaded || !fileName || fileName === "N/A") return;
-
-    // Also skip if fileName is a JSON file (should only process audio files)
     if (fileName.endsWith(".json")) return;
 
-    // reset current time
     setCurrentTime(0);
-
-    // converting audio file name to json
     const baseName = fileName.replace(/\.[^/.]+$/, "");
     const transcriptUrl = `/transcripts/${baseName}.json`;
 
     fetch(transcriptUrl)
-      .then((response) => {
-        if (!response.ok) {
-          // Don't throw - just log and return
-          console.warn(
-            `Transcript not found for ${fileName} at ${transcriptUrl}`
-          );
+      .then((res) => {
+        if (!res.ok) {
+          console.warn(`Transcript not found at ${transcriptUrl}`);
           return null;
         }
-        return response.json();
+        return res.json();
       })
-      .then((data) => {
-        if (data) {
-          setTranscription(data);
-        }
-      })
-      .catch((error) => {
-        // Catch any errors and log them instead of crashing
-        console.error("Error fetching transcript:", error);
-      });
-  }, [fileName, transcriptionLoaded]); // Added transcriptionLoaded to dependencies
+      .then((data) => { if (data) setTranscription(data); })
+      .catch((err) => console.error("Error fetching transcript:", err));
+  }, [fileName, transcriptionLoaded]);
 
-  const handleEditSegment = (
-  index: number,
-  updatedSpeaker: string,
-  updatedText: string
-) => {
-  setTranscription((prev) => {
-    if (!prev?.segments) return prev;
-
-    const updatedSegments = [...prev.segments];
-    updatedSegments[index] = {
-      ...updatedSegments[index],
-      speaker: updatedSpeaker,
-      text: updatedText,
-    };
-
-    return {
-      ...prev,
-      segments: updatedSegments,
-    };
-  });
-};
   return (
     <>
       <div className={styles.presentation_header}>
-        <p>
-          <strong>Dispatcher: </strong>
-          {dispatcherName}
-        </p>
-        <p>
-          <strong>Audio File: </strong>
-          {fileName}
-        </p>
+        <p><strong>Dispatcher: </strong>{dispatcherName}</p>
+        <p><strong>Audio File: </strong>{fileName}</p>
       </div>
+      {/* No onEditSegment prop — read-only */}
       <TranscriptPlayer
-      transcriptData={transcription}
-      currentTime={currentTime}
-      onEditSegment={handleEditSegment}
+        transcriptData={transcription}
+        currentTime={currentTime}
+        dispatcherName={dispatcherName}
       />
       <AudioPlayer path={fileURL || undefined} onProgress={setCurrentTime} />
     </>

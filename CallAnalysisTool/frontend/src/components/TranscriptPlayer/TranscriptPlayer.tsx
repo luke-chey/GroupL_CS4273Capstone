@@ -16,93 +16,73 @@ interface TranscriptData {
 interface TranscriptPlayerProps {
   transcriptData?: TranscriptData | string | null;
   currentTime: number;
-  onEditSegment?: (
-    index: number,
-    speaker: string,
-    text: string
-  ) => void;
-}
-
-interface Message {
-  id: number;
-  speaker: string;
-  text: string;
-  start: number;
-  end: number;
+  // When provided, Edit buttons are shown. When absent, read-only.
+  onEditSegment?: (index: number, speaker: string, text: string) => void;
+  
+  dispatcherName?: string;
 }
 
 function TranscriptPlayer({
   transcriptData,
   currentTime,
   onEditSegment,
+  dispatcherName,
 }: TranscriptPlayerProps) {
-  // references
   const chatBoxRef = useRef<HTMLDivElement>(null);
 
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editSpeaker, setEditSpeaker] = useState("");
   const [editText, setEditText] = useState("");
 
-  // converts json into message
   const segments = (transcriptData as TranscriptData)?.segments ?? [];
-  const messages = segments.map(
-    (segment: TranscriptSegment, index: number) => ({
-      id: index,
-      speaker: segment.speaker || "unknown",
-      text: segment.text ? segment.text.trim() : "",
-      start: segment.start,
-      end: segment.end,
-    })
-  );
+  const messages = segments.map((segment: TranscriptSegment, index: number) => ({
+    id: index,
+    speaker: segment.speaker || "unknown",
+    text: segment.text ? segment.text.trim() : "",
+    start: segment.start,
+    end: segment.end,
+  }));
+
+  
+  const displaySpeaker = (speaker: string) => {
+    if (speaker === "dispatcher" && dispatcherName) return dispatcherName;
+    return speaker;
+  };
 
   const startEdit = (id: number, speaker: string, text: string) => {
-  setEditingIndex(id);
-  setEditSpeaker(speaker);
-  setEditText(text);
-};
+    setEditingIndex(id);
+    setEditSpeaker(speaker);
+    setEditText(text);
+  };
 
-const cancelEdit = () => {
-  setEditingIndex(null);
-  setEditSpeaker("");
-  setEditText("");
-};
+  const cancelEdit = () => {
+    setEditingIndex(null);
+    setEditSpeaker("");
+    setEditText("");
+  };
 
-const saveEdit = () => {
-  if (editingIndex === null) return;
-  onEditSegment?.(editingIndex, editSpeaker, editText);
-  cancelEdit();
-};
+  const saveEdit = () => {
+    if (editingIndex === null) return;
+    onEditSegment?.(editingIndex, editSpeaker, editText);
+    cancelEdit();
+  };
 
-  // finds active message based on current time
+  // Find active message based on current playback time
   let activeIndex = messages.findIndex(
-    (message) => currentTime >= message.start && currentTime <= message.end
+    (m) => currentTime >= m.start && currentTime <= m.end
   );
-
-  // addresses active index during gaps in time stamps
   if (activeIndex === -1) {
-    // use the last message before the gap
     for (let i = messages.length - 1; i >= 0; i--) {
-      if (currentTime > messages[i].end) {
-        activeIndex = i;
-        break;
-      }
+      if (currentTime > messages[i].end) { activeIndex = i; break; }
     }
-
-    // edge case (before first index)
-    if (activeIndex === -1) {
-      activeIndex = 0;
-    }
+    if (activeIndex === -1) activeIndex = 0;
   }
 
-  // reset scroll/activeChat when transcript changes
+  // Scroll to top when transcript changes
   useEffect(() => {
-    const box = chatBoxRef.current;
-    if (box) {
-      box.scrollTop = 0;
-    }
+    if (chatBoxRef.current) chatBoxRef.current.scrollTop = 0;
   }, [transcriptData]);
 
-  // return empty chat box if no transcript has been loaded
   if (segments.length === 0) {
     return <div className={styles.chatBox}>Choose a call to review</div>;
   }
@@ -113,74 +93,57 @@ const saveEdit = () => {
         {messages.map((message) => (
           <div
             key={message.id}
-            className={`
-                            ${styles.messageRow} 
-                            ${
-                              message.speaker === "caller"
-                                ? styles.right
-                                : styles.left
-                            }
-                        `}
+            className={`${styles.messageRow} ${message.speaker === "caller" ? styles.right : styles.left}`}
           >
             <div
               className={`
-                                ${styles.bubble} 
-                                ${
-                                  message.speaker === "caller"
-                                    ? styles.callerBubble
-                                    : styles.dispatcherBubble
-                                }
-                                ${
-                                  message.id === activeIndex
-                                    ? styles.activeBubble
-                                    : ""
-                                } 
-                            `}
+                ${styles.bubble}
+                ${message.speaker === "caller" ? styles.callerBubble : styles.dispatcherBubble}
+                ${message.id === activeIndex ? styles.activeBubble : ""}
+              `}
             >
-                          {editingIndex === message.id ? (
-              <>
-                <div className={styles.speaker}>Editing Segment</div>
+              {editingIndex === message.id ? (
+                <>
+                  <div className={styles.speaker}>Editing Segment</div>
 
-                <select
-                  value={editSpeaker}
-                  onChange={(e) => setEditSpeaker(e.target.value)}
-                  className={styles.editSelect}
-                >
-                  <option value="dispatcher">dispatcher</option>
-                  <option value="caller">caller</option>
-                  <option value="unknown">unknown</option>
-                </select>
-
-                <textarea
-                  value={editText}
-                  onChange={(e) => setEditText(e.target.value)}
-                  className={styles.editTextarea}
-                  rows={4}
-                />
-
-                <div className={styles.editActions}>
-                  <button onClick={saveEdit} className={styles.saveButton}>
-                    Save
-                  </button>
-                  <button onClick={cancelEdit} className={styles.cancelButton}>
-                    Cancel
-                  </button>
-                </div>
-              </>
-            ) : (
-              <>
-                <div className={styles.speaker}>{message.speaker}</div>
-                <div>{message.text}</div>
-                {onEditSegment && (
-                  <button
-                    onClick={() => startEdit(message.id, message.speaker, message.text)}
-                    className={styles.editButton}
+                  <select
+                    value={editSpeaker}
+                    onChange={(e) => setEditSpeaker(e.target.value)}
+                    className={styles.editSelect}
                   >
-                    Edit
-                  </button>
-                )}
-              </>
-            )}
+                    <option value="dispatcher">dispatcher</option>
+                    <option value="caller">caller</option>
+                    <option value="unknown">unknown</option>
+                  </select>
+
+                  <textarea
+                    value={editText}
+                    onChange={(e) => setEditText(e.target.value)}
+                    className={styles.editTextarea}
+                    rows={4}
+                  />
+
+                  <div className={styles.editActions}>
+                    <button onClick={saveEdit} className={styles.saveButton}>Save</button>
+                    <button onClick={cancelEdit} className={styles.cancelButton}>Cancel</button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  {/* Show real dispatcher name */}
+                  <div className={styles.speaker}>{displaySpeaker(message.speaker)}</div>
+                  <div>{message.text}</div>
+                  {/* Only render Edit button when onEditSegment is provided */}
+                  {onEditSegment && (
+                    <button
+                      onClick={() => startEdit(message.id, message.speaker, message.text)}
+                      className={styles.editButton}
+                    >
+                      Edit
+                    </button>
+                  )}
+                </>
+              )}
             </div>
           </div>
         ))}
