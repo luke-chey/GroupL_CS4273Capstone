@@ -17,8 +17,8 @@ from flask_cors import CORS
 from api.routes.dispatchers import dispatchers_bp
 from api.routes.files import files_bp
 from api.routes.upload import upload_bp
-from api.services.transcriber import initialize_transcriber
-from AIGrader import initialize_ollama, check_ollama_ready
+from api.services.whisperx_transcriber import initialize_transcriber
+from api.services.ai_grader import initialize_ollama, check_ollama_ready
 
 
 def _env_flag(name: str, default: bool = False) -> bool:

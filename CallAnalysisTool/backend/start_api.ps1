@@ -30,7 +30,8 @@ if (Test-Path $envFile) {
 }
 
 # ---- Normal execution starts here ----
-ollama serve
+Start-Job -ScriptBlock { ollama serve }
+
 .\venv\Scripts\activate
 $env:PYTHONPATH = "."
 python .\api\app.py

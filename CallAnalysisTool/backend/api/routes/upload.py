@@ -1,11 +1,9 @@
 # Standard library
 import json
 import os
-import re
 import shutil
 import zipfile
 import uuid
-from datetime import datetime
 from pathlib import Path
 
 # Third-party
@@ -13,138 +11,20 @@ from flask import Blueprint, request, jsonify
 from pathvalidate import sanitize_filepath
 
 # Local modules
-from AIGrader import detect_nature_codes_in_memory, identify_nature_code
-from JSONTranscriptionParser import json_to_text
-from api.services.ai_grader import AIGraderService
-from api.services.transcription_pipeline.speaker_separate.speaker_separation import speaker_separation
-from api.services.transcriber import get_transcriber
+from api.services.ai_grader import (
+    detect_nature_codes_in_memory,
+    grade_transcript_file,
+    identify_nature_code,
+)
+from api.services.speaker_separation import speaker_separation
+from api.services.text_handler import extract_info_from_cdr, json_to_text
+from api.services.whisperx_transcriber import get_transcriber
 
 upload_bp = Blueprint('upload', __name__)
 
 # Root of output directory
 OUTPUT_DIR = Path("output")
 OUTPUT_DIR.mkdir(exist_ok=True)
-
-
-def extract_info_from_cdr(cdr_path):
-    """
-    Extract date (YYYYMMDD), time (HHMMSS), and dispatcher name from CDR text.
-    """
-    # Read file
-    cdr_content = cdr_path.read_text(encoding="utf-8", errors="ignore")
-
-    # Start: 2026-02-27 12:44:33
-    start_match = re.search(
-        r"\bStart:\s*(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2}):(\d{2})",
-        cdr_content,
-    )
-    if not start_match:
-        return None, None, None
-
-    year, month, day, hour, minute, second = start_match.groups()
-    date_str = f"{year}{month}{day}"
-    time_str = f"{hour}{minute}{second}"
-
-    # Dispatcher name
-    agent_match = re.search(r"\bAGENT_NAME:\s*([^,\s]+)", cdr_content)
-    if not agent_match:
-        # Could be stored as AGENT
-        agent_match = re.search(r"\bAGENT:\s*([^,\s]+)", cdr_content)
-
-    agent_name = agent_match.group(1).strip() if agent_match else None
-
-    if not agent_name:
-        return None, None, None
-
-    return date_str, time_str, agent_name
-
-def grade_transcript(nature_code, transcript_path, output_path):
-    """
-    Grade a transcript using AI grading (default)
-    
-    Request body (JSON):
-        Group B's transcript format:
-        {
-            "language": "en",
-            "segments": [
-                {
-                    "start": 0.0,
-                    "end": 5.0,
-                    "text": "Norman 911, what is the address?",
-                    "speaker": "SPEAKER_01",
-                    ...
-                }
-            ]
-        }
-    
-    Optional query params:
-        ?show_evidence=true  - Include evidence in response (not used by AI)
-    
-    Returns:
-        JSON response with AI grading results
-    """ 
-    transcript_data = None
-    with open(transcript_path, "r") as f:
-        transcript_data = json.load(f)
-
-    if not isinstance(transcript_data, dict) or 'segments' not in transcript_data:
-        return jsonify({'error': 'Invalid transcript format'}), 400
-    
-    
-    # Initialize AI grader (questions now loaded dynamically based on nature codes)
-    print("Initializing AI grader...", flush=True)
-    ai_grader = AIGraderService()
-    print("AI grader initialized, calling grade_transcript...", flush=True)
-    
-    # Grade the transcript using AI with nature code detection
-    # Returns: (grades, primary_nature_code, all_questions)
-    grades, questions = ai_grader.grade_transcript(
-        nature_code,
-        transcript_data,
-    )
-    print(f"Grade transcript completed. Got {len(grades)} grades.", flush=True)
-    
-    # Calculate percentage score
-    percentage = ai_grader.calculate_percentage(grades, questions)
-    
-    # Count questions by type
-    total_questions = len(grades)
-    case_entry_count = sum(1 for q_id in grades.keys() if q_id.startswith('CE_'))
-    nature_code_count = sum(1 for q_id in grades.keys() if q_id.startswith('NC_'))
-    
-    # Count correct answers (codes "1" and "6")
-    questions_asked_correctly = sum(
-        1 for g in grades.values() if g.get('code') in ['1', '6']
-    )
-    questions_missed = total_questions - questions_asked_correctly
-    
-    # Build response
-    response = {
-        'grader_type': 'ai',
-        'grade_percentage': percentage,
-        'detected_nature_code': nature_code,
-        'total_questions': total_questions,
-        'case_entry_questions': case_entry_count,
-        'nature_code_questions': nature_code_count,
-        'questions_asked_correctly': questions_asked_correctly,
-        'questions_missed': questions_missed,
-        'timestamp': datetime.utcnow().isoformat() + 'Z',
-        'grades': grades,
-        'metadata': {
-            'language': transcript_data.get('language', 'unknown'),
-            'segment_count': len(transcript_data.get('segments', [])),
-            'grader_version': '2.0.0',
-            'model': 'llama3.1:8b',
-            'questions_source': f'EMSQA.csv (Case Entry + {nature_code})',
-            'nature_code_detection': 'keyword + embedding model'
-        }
-    }
-
-    grades_path = output_path / "grades.json"
-    with open(grades_path, "w") as f:
-        json.dump(response, f)
-    
-    return response, grades_path
 
 @upload_bp.route('/upload', methods=['POST'])
 def upload():
@@ -275,7 +155,7 @@ def upload():
             raise RuntimeError("Nature code could not be detected")
         
         # Get grades
-        response, grades_path = grade_transcript(nature_code, transcript_path, TEMP_PATH)
+        response, grades_path = grade_transcript_file(nature_code, transcript_path, TEMP_PATH)
 
         # Create destination folder and move everything there
         # Base output directory
@@ -316,10 +196,10 @@ def upload():
             grades_src: grades_dst
         }
 
-        # Move + rename
+        # Move and rename to final destination
         for src, dst in source_dest_dict.items():
             try:
-                os.replace(src, dst)
+                shutil.move(src, dst)
             except Exception as e:
                 print(f"Failed to move '{src}' to '{dst}': {e}")
 
