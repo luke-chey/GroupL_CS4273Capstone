@@ -36,7 +36,13 @@ interface StoredBatchData {
 
 const getFileParts = (filename: string | undefined): FileParts => {
   if (!filename) {
-    return {} as FileParts;
+    return {
+      name: "[name]",
+      dateTime: new Date(2000, 0, 1, 0, 0, 0),
+      nature: "[nature]",
+      description: "[desc]",
+      extension: "[ext]"
+    } as FileParts;
   }
 
   const lastDotIndex = filename.lastIndexOf(".");
