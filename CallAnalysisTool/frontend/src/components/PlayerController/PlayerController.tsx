@@ -3,11 +3,28 @@ import styles from "./PlayerController.module.css";
 import { AudioPlayer } from "../AudioPlayer/AudioPlayer";
 import { useEffect, useState } from "react";
 import { TranscriptPlayer } from "../TranscriptPlayer/TranscriptPlayer";
+import {
+  buildBackendFileUrl,
+  fetchBackendFile,
+} from "@/lib/api";
 
-interface PlayerControllerProps {
-  transcriptionId?: string;
+interface TranscriptSegment {
+  speaker?: string;
+  text?: string;
+  start: number;
+  end: number;
 }
 
+interface TranscriptData {
+  segments?: TranscriptSegment[];
+}
+
+interface PlayerControllerProps {
+  transcriptFile?: string;
+  audioFile?: string;
+}
+
+<<<<<<< HEAD
 interface TranscriptSegment {
   speaker?: string;
   text?: string;
@@ -24,11 +41,24 @@ export default function PlayerController({ transcriptionId }: PlayerControllerPr
   const [fileName, setFileName] = useState("N/A");
   const [fileURL, setFileURL] = useState<string | null>(null);
   const [transcription, setTranscription] = useState<TranscriptData | null>(null);
+=======
+export default function PlayerController({
+  transcriptFile,
+  audioFile,
+}: PlayerControllerProps) {
+  // states
+  const [fileName, setFileName] = useState("N/A");
+  const [fileURL, setFileURL] = useState<string | null>(null);
+  const [transcription, setTranscription] = useState<TranscriptData | null>(
+    null
+  );
+>>>>>>> origin/main
   const [currentTime, setCurrentTime] = useState(0);
   const [transcriptionLoaded, setTranscriptionLoaded] = useState(false);
 
-  // Load transcription when transcriptionId is provided
+  // Load exact backend record files when provided
   useEffect(() => {
+<<<<<<< HEAD
     if (transcriptionId) {
       setTranscriptionLoaded(false);
       setTranscription(null);
@@ -68,12 +98,47 @@ export default function PlayerController({ transcriptionId }: PlayerControllerPr
           console.error("Error loading transcription:", err);
           setTranscriptionLoaded(false);
         });
+=======
+    if (!transcriptFile) {
+      return;
+>>>>>>> origin/main
     }
-  }, [transcriptionId]);
 
+    setTranscriptionLoaded(false);
+    setTranscription(null);
+    setCurrentTime(0);
+
+    fetchBackendFile<TranscriptData>(transcriptFile)
+      .then((data) => {
+        setTranscription(data);
+        setTranscriptionLoaded(true);
+        setFileName(audioFile || transcriptFile);
+        setFileURL(audioFile ? buildBackendFileUrl(audioFile) : null);
+      })
+      .catch((error) => {
+        console.error("Error loading transcription:", error);
+        setTranscriptionLoaded(false);
+      });
+  }, [audioFile, transcriptFile]);
+
+<<<<<<< HEAD
   // Extract dispatcher name from filename for display
   const match = fileName.match(/.*_(.+)\.[^.]+$/);
   const dispatcherName = match ? match[1] : "N/A";
+=======
+  // handlers
+  const handleGetFile = (name: string) => {
+    setFileName(name);
+    setTranscriptionLoaded(false); // Reset when manually selecting a file
+  };
+
+  const handleGetURL = (url: string) => {
+    setFileURL(url);
+  };
+
+  // extracting dispatcher name from file name
+  const dispatcherName = fileName.split("_")[0];
+>>>>>>> origin/main
 
   // Load transcript from public folder for manual file selection
   useEffect(() => {
@@ -99,12 +164,16 @@ export default function PlayerController({ transcriptionId }: PlayerControllerPr
   return (
     <>
       <div className={styles.presentation_header}>
+<<<<<<< HEAD
         <p><strong>Dispatcher: </strong>{dispatcherName}</p>
         <p><strong>Audio File: </strong>{fileName}</p>
+=======
+
+>>>>>>> origin/main
       </div>
       {/* No onEditSegment prop — read-only */}
       <TranscriptPlayer
-        transcriptData={transcription}
+        transcriptData={transcription || undefined}
         currentTime={currentTime}
         dispatcherName={dispatcherName}
       />

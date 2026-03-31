@@ -27,6 +27,10 @@ scikit-learn>=1.5.0,<2.0.0        # For cosine similarity calculations
 
 nltk>=3.9.0
 
+urllib3>=2.6.3 # URI string decoding
+
+pathvalidate # Filename and folder name sanitization
+
 # Future dependencies (for additional AI features)
 # llama-index==0.9.0         # For embeddings
 # faiss-cpu==1.7.4           # For vector search

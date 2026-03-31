@@ -1,4 +1,21 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5001";
+import type { DispatcherRecord, FileGrade } from "@/types/dispatcher";
+
+const API_PORT = process.env.NEXT_PUBLIC_API_PORT || "5001";
+
+export function getApiBaseUrl(): string {
+  let base = `http://127.0.0.1:${API_PORT}`
+
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    base = process.env.NEXT_PUBLIC_API_URL;
+  }
+
+  if (typeof window !== "undefined") {
+    base = `${window.location.protocol}//${window.location.hostname}:${API_PORT}`;
+  }
+
+  console.log(base);
+  return base;
+}
 
 export interface ApiResponse {
   filename: string;
@@ -28,22 +45,70 @@ export interface ApiResponse {
   };
 }
 
+export interface UploadPipelineResponse {
+  outputDestination: string;
+  dispatcherName: string;
+  grades: ApiResponse;
+}
+
 export interface Question {
   questionId: string;
   label: string;
 }
 
+interface DispatcherSummaryResponse {
+  dispatchers?: Array<{
+    name?: string;
+    overallGrade?: number;
+    numRecords?: number;
+    numTranscripts?: number;
+    numGrades?: number;
+  }>;
+}
+
+interface DispatcherRecordsResponse {
+  records?: string[];
+}
+
+interface RecordDetailsResponse {
+  audioFiles?: string[];
+  cdrFiles?: string[];
+  transcriptFiles?: string[];
+  gradeFiles?: string[];
+  otherFiles?: string[];
+}
+
 /**
  * Upload a JSON file to the API and get analysis results
  */
-export async function uploadFileForAnalysis(file: File): Promise<ApiResponse> {
+export async function uploadFileForAnalysis(
+  file: File
+): Promise<UploadPipelineResponse> {
   const formData = new FormData();
   formData.append("file", file);
 
+  return postUploadRequest(formData);
+}
+
+export async function uploadTranscriptForAnalysis(
+  transcriptData: unknown
+): Promise<UploadPipelineResponse> {
+  return postUploadRequest(JSON.stringify(transcriptData), {
+    "Content-Type": "application/json",
+  });
+}
+
+async function postUploadRequest(
+  body: BodyInit,
+  headers?: HeadersInit
+): Promise<UploadPipelineResponse> {
+  const apiBaseUrl = getApiBaseUrl();
+
   try {
-    const response = await fetch(`${API_BASE_URL}/api/upload`, {
+    const response = await fetch(`${apiBaseUrl}/api/upload`, {
       method: "POST",
-      body: formData,
+      headers,
+      body,
     });
 
     if (!response.ok) {
@@ -70,7 +135,7 @@ export async function uploadFileForAnalysis(file: File): Promise<ApiResponse> {
     // Handle network errors specifically
     if (error instanceof TypeError && error.message.includes("fetch")) {
       throw new Error(
-        `Failed to connect to API at ${API_BASE_URL}. Make sure the backend server is running on port 5000.`
+        `Failed to connect to API at ${apiBaseUrl}. Make sure the backend server is running on port ${API_PORT}.`
       );
     }
     // Re-throw other errors
@@ -125,4 +190,60 @@ export function getQuestionsAskedIncorrectly(
       questionId,
       label: grade.label,
     }));
+}
+
+async function fetchJson<T>(path: string): Promise<T> {
+  const response = await fetch(`${getApiBaseUrl()}${path}`);
+
+  if (!response.ok) {
+    throw new Error(`API error (${response.status}): ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
+export async function fetchDispatchers(): Promise<DispatcherSummaryResponse> {
+  return fetchJson<DispatcherSummaryResponse>("/api/dispatchers");
+}
+
+export async function fetchDispatcherRecords(
+  dispatcherName: string
+): Promise<string[]> {
+  const response = await fetchJson<DispatcherRecordsResponse>(
+    `/api/dispatchers/${encodeURIComponent(dispatcherName)}`
+  );
+
+  return Array.isArray(response.records) ? response.records : [];
+}
+
+export async function fetchDispatcherRecordDetails(
+  dispatcherName: string,
+  recordName: string
+): Promise<DispatcherRecord> {
+  const response = await fetchJson<RecordDetailsResponse>(
+    `/api/dispatchers/${encodeURIComponent(
+      dispatcherName
+    )}/${encodeURIComponent(recordName)}`
+  );
+
+  return {
+    name: recordName,
+    audioFile: response.audioFiles?.[0],
+    cdrFile: response.cdrFiles?.[0],
+    transcriptFile: response.transcriptFiles?.[0],
+    gradeFile: response.gradeFiles?.[0],
+    otherFiles: response.otherFiles || [],
+  };
+}
+
+export async function fetchGradeFile(filename: string): Promise<FileGrade> {
+  return fetchJson<FileGrade>(`/api/files/${encodeURIComponent(filename)}`);
+}
+
+export async function fetchBackendFile<T>(filename: string): Promise<T> {
+  return fetchJson<T>(`/api/files/${encodeURIComponent(filename)}`);
+}
+
+export function buildBackendFileUrl(filename: string): string {
+  return `${getApiBaseUrl()}/api/files/${encodeURIComponent(filename)}`;
 }

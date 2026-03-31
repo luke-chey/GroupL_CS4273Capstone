@@ -35,6 +35,7 @@ function TranscriptPlayer({
   const [editText, setEditText] = useState("");
 
   const segments = (transcriptData as TranscriptData)?.segments ?? [];
+<<<<<<< HEAD
   const messages = segments.map((segment: TranscriptSegment, index: number) => ({
     id: index,
     speaker: segment.speaker || "unknown",
@@ -42,6 +43,18 @@ function TranscriptPlayer({
     start: segment.start,
     end: segment.end,
   }));
+=======
+  console.log(segments);
+  const messages = segments.map(
+    (segment: TranscriptSegment, index: number) => ({
+      id: index,
+      speaker: segment.speaker || "unknown",
+      text: segment.text ? segment.text.trim() : "",
+      start: segment.start,
+      end: segment.end,
+    })
+  );
+>>>>>>> origin/main
 
   
   const displaySpeaker = (speaker: string) => {

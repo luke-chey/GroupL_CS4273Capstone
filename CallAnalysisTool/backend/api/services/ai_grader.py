@@ -48,129 +48,85 @@ class AIGraderService:
         """
         pass
     
-    def grade_transcript(self, transcript_data: Dict[str, Any], show_evidence: bool = False) -> Tuple[Dict[str, Any], str, Dict[str, str]]:
+    def grade_transcript(self, nature_code: str, transcript_data: Dict[str, Any], show_evidence: bool = False) -> Tuple[Dict[str, Any], str, Dict[str, str]]:
         """
         Grade a transcript using AI with nature code detection
-        
-        Args:
-            transcript_data: Group B's JSON format with 'segments' array
-            show_evidence: Whether to include evidence (not used currently)
-        
-        Returns:
-            Tuple of (formatted_grades, primary_nature_code, all_questions)
-            formatted_grades: Dict with structure:
-            {
-                "CE_1": {"code": "1", "label": "...", "status": "Asked Correctly"},
-                "NC_3": {"code": "2", "label": "...", "status": "Not Asked"},
-                ...
-            }
         """
         import traceback
-        
-        print("Starting grade_transcript method...", flush=True)
-        sys.stderr.write("Starting grade_transcript method...\n")
-        sys.stderr.flush()
-        
-        # JSONTranscriptionParser expects a file path, so create a temp file
+
+        print("Starting grade_transcript...", flush=True)
+
+        # Create temp file for JSON parser (expects file path)
         try:
-            print("Creating temp file for transcript...", flush=True)
+            print("Creating temporary transcript file...", flush=True)
             with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as tmp:
                 json.dump(transcript_data, tmp)
                 tmp_path = tmp.name
-            print(f"Temp file created: {tmp_path}", flush=True)
+            print(f"Temporary file created: {tmp_path}", flush=True)
         except Exception as e:
-            sys.stderr.write(f"ERROR creating temp file: {e}\n{traceback.format_exc()}\n")
-            sys.stderr.flush()
+            print(f"Failed to create temp file: {e}\n{traceback.format_exc()}", flush=True)
             raise
-        
+
         try:
-            # Step 1: Convert JSON to text format
-            print("Step 1: Converting JSON to text format...", flush=True)
-            sys.stderr.write("Step 1: Converting JSON to text format...\n")
-            sys.stderr.flush()
+            # Step 1: Convert JSON to text
+            print("Step 1: Converting JSON to text...", flush=True)
             transcript_text = json_to_text(tmp_path)
+
             if not transcript_text:
                 raise ValueError("Failed to parse transcript data")
-            print(f"Step 1 complete: Got transcript text ({len(transcript_text)} chars)", flush=True)
-            
-            # Step 2: Detect nature codes
-            print("Step 2: Detecting nature codes...", flush=True)
-            sys.stderr.write("Step 2: Detecting nature codes...\n")
-            sys.stderr.flush()
-            try:
-                nature_codes_text = detect_nature_codes_in_memory(tmp_path, transcript_text)
-            except Exception as e:
-                sys.stderr.write(f"ERROR in nature code detection: {e}\n")
-                sys.stderr.write(f"Traceback: {traceback.format_exc()}\n")
-                sys.stderr.flush()
-                raise RuntimeError(f"Failed to detect nature codes: {e}")
-            
-            if not nature_codes_text:
-                raise RuntimeError("Failed to detect nature codes - empty result")
-            print(f"Step 2 complete: Got nature codes text", flush=True)
-            
-            # Step 3: Extract and sort nature codes by confidence
-            print("Step 3: Extracting nature codes...", flush=True)
-            nature_code = identify_nature_code(nature_codes_text, transcript_text)
-            if not nature_code:
-                raise RuntimeError(f"No nature code detected in transcript: {nature_code}")
-            print(f"Step 3 complete: Found nature code", flush=True)
-            
-            # Step 4: Get primary nature code (highest confidence)
-            primary_nature_code = nature_code
-            print(f"Step 4 complete: Primary nature code: {primary_nature_code}", flush=True)
-            
-            # Step 5: Load questions for Case Entry AND primary nature code
-            print("Step 5: Loading questions...", flush=True)
+
+            print(f"Step 1 complete: transcript length = {len(transcript_text)}", flush=True)
+
+            # Step 2: Load questions
+            print("Step 2: Loading questions...", flush=True)
             case_entry_questions = load_nature_code_questions("Case Entry")
-            nature_code_questions = load_nature_code_questions(primary_nature_code)
-            
-            # Combine into one dict
+            nature_code_questions = load_nature_code_questions(nature_code)
+
             all_questions = {**case_entry_questions, **nature_code_questions}
-            
+
             if not all_questions:
                 raise RuntimeError("Failed to load questions from EMSQA.csv")
-            print(f"Step 5 complete: Loaded {len(all_questions)} questions", flush=True)
-            
-            # Step 6: Get AI grades
-            print("Step 6: Getting AI grades from Ollama...", flush=True)
-            sys.stderr.write("Step 6: Getting AI grades from Ollama...\n")
-            sys.stderr.flush()
+
+            print(f"Step 2 complete: {len(all_questions)} questions loaded", flush=True)
+
+            # Step 3: AI grading
+            print("Step 3: Running AI grading...", flush=True)
             try:
-                ai_grades = ai_grade_transcript(transcript_text, all_questions, primary_nature_code)
+                ai_grades = ai_grade_transcript(transcript_text, all_questions, nature_code)
             except Exception as e:
-                sys.stderr.write(f"ERROR in AI grading: {e}\n")
-                sys.stderr.write(f"Traceback: {traceback.format_exc()}\n")
-                sys.stderr.flush()
+                print(f"AI grading failed: {e}\n{traceback.format_exc()}", flush=True)
                 raise RuntimeError(f"AI grading failed: {e}")
-            
+
             if not ai_grades:
-                raise RuntimeError("AI grading failed - empty response from Ollama")
-            print(f"Step 6 complete: Got {len(ai_grades)} grades", flush=True)
-            
-            # Step 7: Format grades to match API response structure
+                raise RuntimeError("AI grading returned empty results")
+
+            print(f"Step 3 complete: received {len(ai_grades)} grades", flush=True)
+
+            # Step 4: Format results
+            print("Step 4: Formatting grades...", flush=True)
             formatted_grades = {}
+
             for q_id, question_text in all_questions.items():
-                code = ai_grades.get(q_id, "2")  # Default to "Not Asked" if missing
+                code = ai_grades.get(q_id, "2")  # Default = Not Asked
                 formatted_grades[q_id] = {
                     "code": code,
                     "label": question_text,
                     "status": self.KEY.get(code, "Unknown")
                 }
-            
-            print("Step 7 complete: Grades formatted successfully", flush=True)
-            return formatted_grades, primary_nature_code, all_questions
-        
+
+            print("Step 4 complete: formatting finished", flush=True)
+
+            return formatted_grades, all_questions
+
         except Exception as e:
-            sys.stderr.write(f"ERROR in grade_transcript: {e}\n")
-            sys.stderr.write(f"Full traceback:\n{traceback.format_exc()}\n")
-            sys.stderr.flush()
+            print(f"Error in grade_transcript: {e}\n{traceback.format_exc()}", flush=True)
             raise
-        
+
         finally:
             # Clean up temp file
-            if os.path.exists(tmp_path):
+            if 'tmp_path' in locals() and os.path.exists(tmp_path):
                 os.unlink(tmp_path)
+                print("Temporary file cleaned up", flush=True)
     
     def calculate_percentage(self, grades: Dict[str, Any], questions: Dict[str, str]) -> float:
         """

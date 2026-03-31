@@ -1,7 +1,7 @@
 "use client";
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 import Link from "next/link";
-import { Dispatcher } from "@/types/dispatcher";
+import { Dispatcher, DispatcherRecord } from "@/types/dispatcher";
 import {
   Card,
   CardHeader,
@@ -11,6 +11,10 @@ import {
 } from "@/components/ui/card";
 import PlayerController from "./PlayerController/PlayerController";
 import { TranscriptPlayer } from "./TranscriptPlayer/TranscriptPlayer";
+
+/* =========================
+  Types
+========================= */
 
 interface DispatcherDetailsProps {
   dispatcher: Dispatcher;
@@ -34,6 +38,7 @@ interface StoredBatchData {
   pages?: BatchPage[];
 }
 
+<<<<<<< HEAD
 const parseStoredDispatchers = (raw: string | null): Dispatcher[] => {
   if (!raw) return [];
   try { return JSON.parse(raw) as Dispatcher[]; } catch { return []; }
@@ -45,27 +50,54 @@ const parseStoredBatchPages = (raw: string | null): BatchPage[] => {
     const parsed = JSON.parse(raw) as StoredBatchData;
     return Array.isArray(parsed.pages) ? parsed.pages : [];
   } catch { return []; }
+=======
+/* =========================
+  Helpers
+========================= */
+
+const parseStoredDispatchers = (raw: string | null): Dispatcher[] => {
+  try {
+    return raw ? (JSON.parse(raw) as Dispatcher[]) : [];
+  } catch {
+    return [];
+  }
+};
+
+const parseStoredBatchPages = (raw: string | null): BatchPage[] => {
+  try {
+    const parsed = raw ? (JSON.parse(raw) as StoredBatchData) : null;
+    return Array.isArray(parsed?.pages) ? parsed.pages : [];
+  } catch {
+    return [];
+  }
+>>>>>>> origin/main
 };
 
 const buildFallbackPages = (dispatcher: Dispatcher): BatchPage[] => {
-  const transcriptFiles = dispatcher.files?.transcriptFiles || [];
+  const records = dispatcher.records || [];
   const grades = dispatcher.grades || {};
+<<<<<<< HEAD
   return transcriptFiles
     .filter((filename) => Boolean(grades[filename]))
     .map((filename, index) => ({
+=======
+
+  return records
+    .filter((record) => record.transcriptFile && grades[record.transcriptFile])
+    .map((record, i) => ({
+>>>>>>> origin/main
       dispatcherId: dispatcher.id,
-      transcriptFilename: filename,
-      uploadOrder: index,
+      transcriptFilename: record.transcriptFile as string,
+      uploadOrder: i,
     }));
 };
 
-const baseName = (filename: string) => filename.replace(/\.[^/.]+$/, "");
-
 const calculateOverallGrade = (
-  transcriptFiles: string[],
+  files: string[],
   grades: Dispatcher["grades"]
 ): number | null => {
   const safeGrades = grades || {};
+<<<<<<< HEAD
   const gradedCount = transcriptFiles.filter((f) => Boolean(safeGrades[f])).length;
   if (gradedCount === 0) return null;
   const total = transcriptFiles.reduce((sum, f) => {
@@ -73,7 +105,44 @@ const calculateOverallGrade = (
     return g ? sum + g.grade_percentage : sum;
   }, 0);
   return total / gradedCount;
+=======
+  const graded = files.filter((f) => safeGrades[f]);
+
+  if (graded.length === 0) return null;
+
+  const total = graded.reduce(
+    (sum, f) => sum + safeGrades[f].grade_percentage,
+    0
+  );
+
+  return total / graded.length;
+>>>>>>> origin/main
 };
+
+const getQuestionStatusClassName = (status?: string): string => {
+  switch ((status || "").trim().toLowerCase()) {
+    case "asked correctly":
+      return "text-green-600 font-semibold";
+
+    case "not asked":
+    case "not as scripted":
+      return "text-red-600 font-semibold";
+
+    case "obvious":
+      return "text-blue-600 font-semibold";
+
+    case "unknown":
+    case "n/a":
+      return "text-yellow-600 font-semibold";
+      
+    default:
+      return "text-gray-600 font-medium";
+  }
+};
+
+/* =========================
+   Component
+========================= */
 
 const DispatcherDetails = ({
   dispatcher,
@@ -86,41 +155,62 @@ const DispatcherDetails = ({
   saveMessage,
   onTranscriptFileChange,
 }: DispatcherDetailsProps) => {
+  /* -------- State -------- */
   const [dispatchers, setDispatchers] = useState<Dispatcher[]>([]);
   const [batchPages, setBatchPages] = useState<BatchPage[]>([]);
-  const [currentGradeIndex, setCurrentGradeIndex] = useState(0);
+  const [currentIndex, setCurrentIndex] = useState(0);
 
+<<<<<<< HEAD
   // Increment to force PlayerController remount 
   const [audioKey, setAudioKey] = useState(0);
 
+=======
+  /* -------- Load localStorage -------- */
+>>>>>>> origin/main
   const loadLocalData = () => {
     setDispatchers(parseStoredDispatchers(localStorage.getItem("dispatchers")));
-    setBatchPages(parseStoredBatchPages(localStorage.getItem("latestUploadBatch")));
+    setBatchPages(
+      parseStoredBatchPages(localStorage.getItem("latestUploadBatch"))
+    );
   };
 
   useEffect(() => {
     loadLocalData();
-    const handleUpdate = () => loadLocalData();
-    window.addEventListener("dispatchersUpdated", handleUpdate);
-    return () => window.removeEventListener("dispatchersUpdated", handleUpdate);
+    const handler = () => loadLocalData();
+    window.addEventListener("dispatchersUpdated", handler);
+    return () => window.removeEventListener("dispatchersUpdated", handler);
   }, []);
 
+  /* -------- Derived Data -------- */
+
   const dispatcherMap = useMemo(() => {
+<<<<<<< HEAD
     const map = new Map<string, Dispatcher>();
     for (const d of dispatchers) map.set(d.id, d);
+=======
+    const map = new Map(dispatchers.map((d) => [d.id, d]));
+>>>>>>> origin/main
     map.set(dispatcher.id, dispatcher);
     return map;
   }, [dispatchers, dispatcher]);
 
   const pagesFromBatch = useMemo(
+<<<<<<< HEAD
     () => batchPages.filter((page) => {
       const d = dispatcherMap.get(page.dispatcherId);
       return Boolean(d?.grades?.[page.transcriptFilename]);
     }),
+=======
+    () =>
+      batchPages.filter((p) =>
+        dispatcherMap.get(p.dispatcherId)?.grades?.[p.transcriptFilename]
+      ),
+>>>>>>> origin/main
     [batchPages, dispatcherMap]
   );
 
   const activePages = useMemo(() => {
+<<<<<<< HEAD
     const batchContainsCurrent =
       batchMode && pagesFromBatch.some((p) => p.dispatcherId === dispatcher.id);
     return batchContainsCurrent ? pagesFromBatch : buildFallbackPages(dispatcher);
@@ -196,22 +286,87 @@ const DispatcherDetails = ({
       {/* Page header */}
       <div className="mb-6">
         <Link href="/records" className="text-blue-500 hover:underline mb-4 inline-block">
+=======
+    const inBatch =
+      batchMode &&
+      pagesFromBatch.some((p) => p.dispatcherId === dispatcher.id);
+
+    return inBatch ? pagesFromBatch : buildFallbackPages(dispatcher);
+  }, [batchMode, pagesFromBatch, dispatcher]);
+
+  useEffect(() => {
+    if (!activePages.length) return setCurrentIndex(0);
+
+    const idx = activePages.findIndex(
+      (p) => p.dispatcherId === dispatcher.id
+    );
+
+    setCurrentIndex(idx >= 0 ? idx : 0);
+  }, [dispatcher.id, activePages]);
+
+  const safeIndex = Math.min(currentIndex, activePages.length - 1);
+  const currentPage = activePages[safeIndex];
+
+  const activeDispatcher =
+    dispatcherMap.get(currentPage?.dispatcherId || "") || dispatcher;
+
+  const records = activeDispatcher.records || [];
+  const audioCount = records.filter((record) => Boolean(record.audioFile)).length;
+  const transcripts = activeDispatcher.files?.transcriptFiles || [];
+  const grades = activeDispatcher.grades || {};
+  const recordByTranscript = new Map<string, DispatcherRecord>(
+    records
+      .filter((record): record is DispatcherRecord & { transcriptFile: string } =>
+        Boolean(record.transcriptFile)
+      )
+      .map((record) => [record.transcriptFile, record])
+  );
+
+  const currentTranscript = currentPage?.transcriptFilename;
+  const currentGrade = currentTranscript
+    ? grades[currentTranscript]
+    : undefined;
+  const questionGrades = currentGrade?.grades || currentGrade?.per_question || {};
+
+  const currentRecord = currentTranscript
+    ? recordByTranscript.get(currentTranscript)
+    : undefined;
+  const matchedAudio = currentRecord?.audioFile;
+
+  const overallGrade = calculateOverallGrade(transcripts, grades);
+
+  /* =========================
+     UI
+  ========================= */
+
+  return (
+    <div className="container mx-auto p-6">
+      {/* Header */}
+      <div className="mb-6">
+        <Link href="/records" className="text-blue-500 hover:underline">
+>>>>>>> origin/main
           ← Back to Records
         </Link>
+
         <h1 className="text-3xl font-bold mt-4">
-          {activeDispatcher?.name || dispatcher.name}
+          {activeDispatcher.name}
         </h1>
+
         {overallGrade !== null && (
-          <p className="text-lg font-semibold text-blue-600 mt-1">
-            Overall Dispatcher Grade: {overallGrade.toFixed(1)}%
+          <p className="text-blue-600 font-semibold">
+            Overall Grade: {overallGrade.toFixed(1)}%
           </p>
         )}
-        <p className="text-gray-500 mt-2">
-          Dispatcher ID: {activeDispatcher?.id || dispatcher.id}
+
+        <p className="text-gray-500">
+          Dispatcher ID: {activeDispatcher.id}
         </p>
+
+        {/* Pagination */}
         {activePages.length > 1 && (
           <div className="mt-4 flex items-center gap-3">
             <button
+<<<<<<< HEAD
               type="button"
               onClick={() => setCurrentGradeIndex((p) => Math.max(p - 1, 0))}
               disabled={safeIndex === 0}
@@ -227,6 +382,27 @@ const DispatcherDetails = ({
               onClick={() => setCurrentGradeIndex((p) => Math.min(p + 1, activePages.length - 1))}
               disabled={safeIndex === activePages.length - 1}
               className="px-3 py-2 rounded-md border border-gray-300 text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
+=======
+              onClick={() => setCurrentIndex((i) => Math.max(i - 1, 0))}
+              disabled={safeIndex === 0}
+              className="btn"
+            >
+              Previous
+            </button>
+
+            <span>
+              {safeIndex + 1} / {activePages.length}
+            </span>
+
+            <button
+              onClick={() =>
+                setCurrentIndex((i) =>
+                  Math.min(i + 1, activePages.length - 1)
+                )
+              }
+              disabled={safeIndex === activePages.length - 1}
+              className="btn"
+>>>>>>> origin/main
             >
               Next
             </button>
@@ -234,14 +410,21 @@ const DispatcherDetails = ({
         )}
       </div>
 
+<<<<<<< HEAD
       {/* Top row: Grading + Audio */}
+=======
+      {/* Main Grid */}
+>>>>>>> origin/main
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Transcript Grading */}
+
+        {/* Transcript */}
         <Card>
           <CardHeader>
-            <CardTitle>Transcript Grading</CardTitle>
+            <CardTitle>Question Grades</CardTitle>
           </CardHeader>
+
           <CardContent>
+<<<<<<< HEAD
             {currentFileGrade && currentTranscriptFile ? (
               <div className="space-y-4">
                 <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
@@ -273,15 +456,35 @@ const DispatcherDetails = ({
                     )}
                   </ul>
                 </div>
+=======
+            {currentGrade ? (
+              <div className="space-y-2">
+                <p className="font-medium">{currentTranscript}</p>
+                <p className="text-blue-600">
+                  {currentGrade.grade_percentage}%
+                </p>
+
+                {Object.entries(questionGrades).map(
+                  ([k, q]) => (
+                    <div key={k} className="flex justify-between text-sm">
+                      <span>{q.label}</span>
+                      <span className={getQuestionStatusClassName(q.status)}>
+                        {q.status}
+                      </span>
+                    </div>
+                  )
+                )}
+>>>>>>> origin/main
               </div>
-            ) : activeTranscriptFiles.length > 0 ? (
-              <p className="text-gray-500">No grade available.</p>
             ) : (
-              <p className="text-gray-500">No transcript files available.</p>
+              <p className="text-gray-500">
+                No transcript/grade available
+              </p>
             )}
           </CardContent>
         </Card>
 
+<<<<<<< HEAD
         {/* Audio File — read-only, remounts after save to show updated transcript */}
         <Card>
           <CardHeader>
@@ -289,8 +492,16 @@ const DispatcherDetails = ({
             <CardDescription>
               {currentTranscriptFile ? "Synced to current graded file" : `${activeAudioFiles.length} file(s)`}
             </CardDescription>
+=======
+        {/* Audio */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Audio and Transcript</CardTitle>
+>>>>>>> origin/main
           </CardHeader>
+
           <CardContent>
+<<<<<<< HEAD
             {matchedAudioFile ? (
               <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
                 <p className="text-sm font-medium">{matchedAudioFile}</p>
@@ -304,11 +515,22 @@ const DispatcherDetails = ({
               <p className="text-gray-500">No matching audio file.</p>
             ) : activeAudioFiles.length > 0 ? (
               <p className="text-gray-500">No graded transcript selected for audio sync.</p>
+=======
+            {matchedAudio ? (
+              <>
+                <p className="font-medium">{matchedAudio}</p>
+                <PlayerController
+                  transcriptFile={currentTranscript}
+                  audioFile={matchedAudio}
+                />
+              </>
+>>>>>>> origin/main
             ) : (
-              <p className="text-gray-500">No audio files available.</p>
+              <p className="text-gray-500">No audio available</p>
             )}
           </CardContent>
         </Card>
+
       </div>
 
       {/* Transcript Editor */}

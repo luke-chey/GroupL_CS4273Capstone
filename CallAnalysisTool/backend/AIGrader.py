@@ -117,7 +117,8 @@ def initialize_ollama():
 
 # Input: path to a transcript, transcript text
 # Output: nature codes
-def detect_nature_codes_in_memory(transcript_path, transcript_text):
+def detect_nature_codes_in_memory(transcript_path):
+    transcript_text = json_to_text(transcript_path)
     temp_path = run_detection(transcript_path, transcript_text)
     with open(temp_path, 'r') as f:
         nature_codes = f.read()
@@ -136,13 +137,13 @@ def identify_nature_code(text, transcript):
             print(f"Failed to initialize Ollama for identifying the nature code: {e}")
             raise RuntimeError("Ollama initialization failed. Cannot perform nature code identification.")
         
-    prompt = f"""You are a 911 call quality assurance analyst. The data provided are 'nature codes' and a 'transcript'. You need to parse the transcript and determine the nature code based on the conversation between the dispatcher and caller.
+    prompt = f"""You are a 911 call quality assurance analyst. You need to parse the transcript and determine the nature code based on the conversation between the dispatcher and caller.
     
-    NATURE CODES:
-    {text}
-
     TRANSCRIPT:
     {transcript}
+
+    POSSIBLE NATURE CODES:
+    {text}
 
     Return ONLY the nature code you have identified based on the transcript and ONLY the nature code, don't give me your reasoning.
 
@@ -163,18 +164,16 @@ def identify_nature_code(text, transcript):
                 'top_k': 0.9
             }
         )
-        import json
-        import re
         
         if response:
             return response['response']
         else:
             print("Could not parse AI response")
-            return {}
+            return None
             
     except Exception as e:
         print(f"Nature code identification failed: {e}")
-        return {}
+        return None
 
 # Function for loading specific nature code questions
 
@@ -292,7 +291,7 @@ TRANSCRIPT:
 GRADING QUESTIONS (use codes: 1=Asked Correctly, 2=Not Asked, 3=Asked Incorrectly, 4=Not As Scripted, 5=N/A, 6=Obvious, RC=Recorded Correctly):
 {chr(10).join([f"{qid}: {question}" for qid, question in questions_dict.items()])}
 
-Return ONLY a JSON object with question IDs as keys and grade codes as values. Example: {{"CE_1": "1", "CE_2": "2"}}
+Return ONLY a JSON object with question IDs as keys and grade codes as values. Example: {{"CE_1": "1", "CE_2": "2"}}. DO NOT SAY ANYTHING ELSE.
 
 Important: Be accurate and return valid JSON only."""
     

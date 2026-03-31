@@ -15,8 +15,21 @@ switch ($currentDir) {
     }
 }
 
+# Load environment variables from .env file
+$envFile = "../.env"
+if (Test-Path $envFile) {
+    Get-Content $envFile | ForEach-Object {
+        if ($_ -match '^([^#][^=]+)=(.*)$') {
+            $key = $matches[1].Trim()
+            $value = $matches[2].Trim()
+            Set-Item -Path "env:$key" -Value $value
+        }
+    }
+} else {
+    Write-Warning ".env file not found at $envFile"
+}
+
 # ---- Normal execution starts here ----
 .\venv\Scripts\activate
 $env:PYTHONPATH = "."
-$env:TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD= "true"
 python .\api\app.py

@@ -1,9 +1,15 @@
 "use client";
+
 import React, { useState, useEffect } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Dispatcher } from "@/types/dispatcher";
 import DispatcherDetails from "@/components/dispatcherDetails";
+import {
+  fetchDispatcherRecords,
+  fetchDispatcherRecordDetails,
+  fetchGradeFile,
+} from "@/lib/api";
 
 export default function DispatcherDetailPage() {
   const params = useParams();
@@ -13,17 +19,10 @@ export default function DispatcherDetailPage() {
 
   const [dispatcher, setDispatcher] = useState<Dispatcher | null>(null);
   const [loading, setLoading] = useState(true);
+
   const [transcriptData, setTranscriptData] = useState<any>(null);
   const [savingTranscript, setSavingTranscript] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
-
-
-  // Track the *transcript* filename separately from the dispatcher
-
-  // dispatcherDetails loads transcripts by calling setTranscriptData,
-  // but we also need to know *which file* to PUT to on save.
-
-  
   const [currentTranscriptFilename, setCurrentTranscriptFilename] = useState<string | null>(null);
 
   const handleEditSegment = (index: number, speaker: string, text: string) => {
@@ -51,7 +50,6 @@ export default function DispatcherDetailPage() {
       setSavingTranscript(true);
       setSaveMessage("");
 
-      // Strip .json extension if present — the backend expects the bare filename
       const filenameKey = currentTranscriptFilename.replace(/\.json$/, "");
 
       const response = await fetch(
@@ -80,36 +78,101 @@ export default function DispatcherDetailPage() {
   };
 
   useEffect(() => {
-    const dispatcherId = params.id as string;
+    const dispatcherName = params.name as string;
 
-    const loadDispatcher = (isInitialLoad: boolean = false) => {
-      if (isInitialLoad) setLoading(true);
+    const loadDispatcher = async () => {
+      setLoading(true);
+      try {
+        const recordNames = await fetchDispatcherRecords(dispatcherName);
 
-      const storedDispatchers = localStorage.getItem("dispatchers");
-      if (storedDispatchers) {
-        const dispatchers: Dispatcher[] = JSON.parse(storedDispatchers);
-        const foundDispatcher = dispatchers.find((d) => d.id === dispatcherId);
-        if (foundDispatcher) {
-          setDispatcher(foundDispatcher);
-        } else {
-          router.push("/records");
-        }
-      } else {
+        const records = (
+          await Promise.all(
+            recordNames.map(async (recordName) => {
+              try {
+                return await fetchDispatcherRecordDetails(
+                  dispatcherName,
+                  recordName
+                );
+              } catch (error) {
+                console.warn(
+                  `Failed to load record ${recordName} for dispatcher ${dispatcherName}:`,
+                  error
+                );
+                return null;
+              }
+            })
+          )
+        ).filter((record): record is NonNullable<typeof record> => record !== null);
+
+        const transcriptFiles = records
+          .map((record) => record.transcriptFile)
+          .filter((file): file is string => Boolean(file));
+
+        const audioFiles = records
+          .map((record) => record.audioFile)
+          .filter((file): file is string => Boolean(file));
+
+        const gradeFiles = records
+          .map((record) => record.gradeFile)
+          .filter((file): file is string => Boolean(file));
+
+        const grades: Dispatcher["grades"] = {};
+        await Promise.all(
+          records.map(async (record) => {
+            if (!record.gradeFile || !record.transcriptFile) return;
+
+            try {
+              grades[record.transcriptFile] = await fetchGradeFile(record.gradeFile);
+            } catch (error) {
+              console.warn(`Failed to load grade file ${record.gradeFile}:`, error);
+            }
+          })
+        );
+
+        const gradedTranscripts = transcriptFiles.filter(
+          (filename) => grades?.[filename]
+        );
+
+        const totalGrade = gradedTranscripts.reduce((sum, filename) => {
+          return sum + (grades?.[filename]?.grade_percentage || 0);
+        }, 0);
+
+        const overallGrade =
+          gradedTranscripts.length > 0
+            ? totalGrade / gradedTranscripts.length
+            : 0;
+
+        setDispatcher({
+          id: dispatcherName,
+          name: dispatcherName,
+          overallGrade,
+          numRecords: recordNames.length,
+          numTranscripts: transcriptFiles.length,
+          numGrades: gradeFiles.length,
+          files: {
+            transcriptFiles,
+            audioFiles,
+          },
+          records,
+          grades,
+        });
+      } catch (error) {
+        console.error("Failed loading dispatcher details:", error);
         router.push("/records");
+      } finally {
+        setLoading(false);
       }
-
-      if (isInitialLoad) setLoading(false);
     };
 
-    loadDispatcher(true);
-
-    const handleDispatchersUpdate = () => loadDispatcher(false);
-    window.addEventListener("dispatchersUpdated", handleDispatchersUpdate);
-    return () => window.removeEventListener("dispatchersUpdated", handleDispatchersUpdate);
-  }, [params.id, router]);
+    loadDispatcher();
+  }, [params.name, router]);
 
   if (loading) {
-    return <div className="container mx-auto p-6"><p>Loading...</p></div>;
+    return (
+      <div className="container mx-auto p-6">
+        <p>Loading...</p>
+      </div>
+    );
   }
 
   if (!dispatcher) {
@@ -133,7 +196,6 @@ export default function DispatcherDetailPage() {
       onSaveTranscript={handleSaveTranscript}
       savingTranscript={savingTranscript}
       saveMessage={saveMessage}
-      //lets dispatcherDetails tell this page which transcript is active
       onTranscriptFileChange={setCurrentTranscriptFilename}
     />
   );
