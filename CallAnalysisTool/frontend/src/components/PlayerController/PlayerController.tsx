@@ -23,6 +23,7 @@ interface PlayerControllerProps {
   transcriptFile?: string;
   audioFile?: string;
   editable?: boolean;
+  dispatcherName?: string;
 }
 
 export interface PlayerControllerHandle {
@@ -33,6 +34,7 @@ const PlayerController = forwardRef<PlayerControllerHandle, PlayerControllerProp
   transcriptFile,
   audioFile,
   editable = false,
+  dispatcherName,
 }: PlayerControllerProps, ref) {
   // states
   const [fileName, setFileName] = useState("N/A");
@@ -71,8 +73,11 @@ const PlayerController = forwardRef<PlayerControllerHandle, PlayerControllerProp
       });
   }, [audioFile, transcriptFile]);
 
-  // extracting dispatcher name from file name
-  const dispatcherName = fileName.split("_")[0];
+  const resolvedDispatcherName =
+    dispatcherName ||
+    transcriptFile?.split("_")[0] ||
+    audioFile?.split("_")[0] ||
+    fileName.split("_")[0];
 
   useEffect(() => {
     if (transcriptionLoaded || !fileName || fileName === "N/A") return;
@@ -125,7 +130,7 @@ const PlayerController = forwardRef<PlayerControllerHandle, PlayerControllerProp
         }
         currentTime={currentTime}
         onEditSegment={editable ? handleEditSegment : undefined}
-        dispatcherName={dispatcherName}
+        dispatcherName={resolvedDispatcherName}
       />
       <AudioPlayer path={fileURL || undefined} onProgress={setCurrentTime} />
     </>

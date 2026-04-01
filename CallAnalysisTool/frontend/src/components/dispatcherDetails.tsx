@@ -413,6 +413,7 @@ const DispatcherDetails = ({
                   transcriptFile={currentTranscript}
                   audioFile={matchedAudio}
                   editable={isEditingTranscript}
+                  dispatcherName={activeDispatcher.name}
                 />
                 {transcriptSaveMessage ? (
                   <p

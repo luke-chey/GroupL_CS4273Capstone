@@ -143,7 +143,7 @@ function TranscriptPlayer({
                     onChange={(e) => setEditSpeaker(e.target.value)}
                     className={styles.editSelect}
                   >
-                    <option value="dispatcher">dispatcher</option>
+                    <option value="dispatcher">{dispatcherName || "dispatcher"}</option>
                     <option value="caller">caller</option>
                     <option value="unknown">unknown</option>
                   </select>
