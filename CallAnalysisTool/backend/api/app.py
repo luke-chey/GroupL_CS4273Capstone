@@ -17,8 +17,16 @@ from flask_cors import CORS
 from api.routes.dispatchers import dispatchers_bp
 from api.routes.files import files_bp
 from api.routes.upload import upload_bp
-from api.services.transcriber import initialize_transcriber
-from AIGrader import initialize_ollama, check_ollama_ready
+from api.services.whisperx_transcriber import initialize_transcriber
+from api.services.ai_grader import initialize_ollama, check_ollama_ready
+
+
+def _env_flag(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.lower() in ("true", "1", "yes", "on")
+
 
 def create_app():
     """Application factory pattern"""
@@ -58,7 +66,7 @@ def create_app():
 
     # In containerized environment, defer model initialization to avoid startup issues
     # Models will be initialized on first request if not already loaded
-    if not os.getenv('DOCKER_CONTAINER', '').lower() in ('true', '1', 'yes'):
+    if not _env_flag("DOCKER_CONTAINER"):
         try:
             # Initialize the transcriber (Preloads the WhisperX model on CPU)
             initialize_transcriber()
@@ -83,19 +91,21 @@ def create_app():
 
 if __name__ == '__main__':
     app = create_app()
+    port = int(os.getenv("PORT", "5001"))
+    debug = _env_flag("FLASK_DEBUG", default=os.getenv("FLASK_ENV", "production").lower() == "development")
     
     # Only print banner once (not during reloader restart)
     if os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
         print("=" * 60)
         print("EMS Call Analysis API Server")
         print("=" * 60)
-        print("Running on: http://localhost:5001")
-        print("Dispatchers endpoint: http://localhost:5001/api/dispatchers")
-        print("Upload endpoint: http://localhost:5001/api/upload")
-        print("Files endpoint: http://localhost:5001/api/files/<filename>")
+        print(f"Running on: http://localhost:{port}")
+        print(f"Dispatchers endpoint: http://localhost:{port}/api/dispatchers")
+        print(f"Upload endpoint: http://localhost:{port}/api/upload")
+        print(f"Files endpoint: http://localhost:{port}/api/files/<filename>")
         print("=" * 60)
 
         
     
-    app.run(host='0.0.0.0', port=5001, debug=True)
+    app.run(host='0.0.0.0', port=port, debug=debug)
 

@@ -1,7 +1,6 @@
 "use client";
-import React, { useState, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { uploadFileForAnalysis, uploadTranscriptForAnalysis } from "@/lib/api";
-import { Dispatcher } from "@/types/dispatcher";
 import ProgressModal from "./ProgressModal";
 import { useRouter } from "next/navigation";
 
@@ -19,6 +18,10 @@ const UploadFileContainer = () => {
   const [uploadProgress, setUploadProgress] = useState<string>("");
   const [progressPercentage, setProgressPercentage] = useState<number>(0);
   const [showProgressModal, setShowProgressModal] = useState<boolean>(false);
+  const [totalStartTime, setTotalStartTime] = useState<number | null>(null);
+  const [currentFileStartTime, setCurrentFileStartTime] = useState<number | null>(null);
+  const [currentFileName, setCurrentFileName] = useState<string>("");
+  const [elapsedNow, setElapsedNow] = useState<number>(Date.now());
   const router = useRouter();
   // Define allowed file types
   const allowedTypes = [".zip", ".json"];
@@ -81,19 +84,42 @@ const UploadFileContainer = () => {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
   };
 
-  const getZipFiles = (files: File[]) =>
-    files.filter((file) => file.name.endsWith(".zip"));
+  useEffect(() => {
+    if (!isUploading) return;
 
-  // Normalize backend grade shape so UI consumers can stay schema-stable.
-  const parsePerQuestion = (gradeResult: any) =>
-    gradeResult?.grades && typeof gradeResult.grades === "object"
-      ? Object.fromEntries(
-          Object.entries(gradeResult.grades).map(([qid, g]: any) => [
-            qid,
-            { code: g.code, label: g.label, status: g.status },
-          ])
-        )
-      : {};
+    const intervalId = window.setInterval(() => {
+      setElapsedNow(Date.now());
+    }, 1000);
+
+    return () => window.clearInterval(intervalId);
+  }, [isUploading]);
+
+  const formatElapsedTime = (ms: number | null) => {
+    if (!ms || ms < 0) return "00:00";
+
+    const totalSeconds = Math.floor(ms / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+
+    if (hours > 0) {
+      return `${hours}:${minutes.toString().padStart(2, "0")}:${seconds
+        .toString()
+        .padStart(2, "0")}`;
+    }
+
+    return `${minutes.toString().padStart(2, "0")}:${seconds
+      .toString()
+      .padStart(2, "0")}`;
+  };
+
+  const totalElapsedTime = formatElapsedTime(
+    totalStartTime ? elapsedNow - totalStartTime : null
+  );
+
+  const currentFileElapsedTime = formatElapsedTime(
+    currentFileStartTime ? elapsedNow - currentFileStartTime : null
+  );
 
 
   const orderBatchPages = (batchPages: BatchPageEntry[]) => {
@@ -121,15 +147,18 @@ const UploadFileContainer = () => {
     index: number,
     total: number
   ): Promise<BatchPageEntry> => {
+    setCurrentFileName(file.name);
+    setCurrentFileStartTime(Date.now());
+
     const isZip = file.name.endsWith(".zip");
     const isJson = file.name.endsWith(".json");
 
     if (isZip) {
       setUploadProgress(
-        `Transcribing & grading ${file.name} (${index + 1}/${total})...`
+        `Transcribing and grading ${file.name} (${index + 1}/${total})...`
       );
       const result = await uploadFileForAnalysis(file);
-      const { dispatcherName, grades: gradeResult } = result;
+      const { dispatcherName } = result;
 
       // Extract folder structure to build foldername
       // Format: output/{dispatcherName}/{date}_{time}_{nature_code}/
@@ -157,7 +186,7 @@ const UploadFileContainer = () => {
       const jsonData = JSON.parse(fileContent);
 
       const result = await uploadTranscriptForAnalysis(jsonData);
-      const { dispatcherName, grades: gradeResult } = result;
+      const { dispatcherName } = result;
 
       // Extract folder structure to build foldername
       // Format: output/{dispatcherName}/{date}_{time}_{nature_code}/
@@ -190,6 +219,11 @@ const UploadFileContainer = () => {
     setShowProgressModal(true);
     setProgressPercentage(0);
     setUploadProgress("Processing files...");
+    const startedAt = Date.now();
+    setElapsedNow(startedAt);
+    setTotalStartTime(startedAt);
+    setCurrentFileStartTime(startedAt);
+    setCurrentFileName(selectedFiles[0]?.name || "");
 
     try {
       // Single unified upload + transcription + grading pipeline
@@ -203,6 +237,8 @@ const UploadFileContainer = () => {
       const orderedBatchPages = orderBatchPages(batchPages);
 
       setUploadProgress("Processing complete!");
+      setCurrentFileStartTime(null);
+      setCurrentFileName("");
 
       const firstPage = orderedBatchPages[0];
       setTimeout(() => {
@@ -222,6 +258,9 @@ const UploadFileContainer = () => {
     } finally {
       setIsUploading(false);
       setUploadProgress("");
+      setTotalStartTime(null);
+      setCurrentFileStartTime(null);
+      setCurrentFileName("");
     }
   };
 
@@ -323,6 +362,7 @@ const UploadFileContainer = () => {
       {isUploading && (
         <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
           <p className="text-sm text-blue-700 font-medium">{uploadProgress}</p>
+
         </div>
       )}
 
@@ -347,9 +387,12 @@ const UploadFileContainer = () => {
         </button>
       </div>
       <ProgressModal
+        oneFile={selectedFiles.length==1}
         isOpen={isUploading}
         progress={progressPercentage}
         currentStep={uploadProgress}
+        elapsedTime={totalElapsedTime}
+        currentFileElapsedTime={currentFileElapsedTime}
       />
     </div>
   );

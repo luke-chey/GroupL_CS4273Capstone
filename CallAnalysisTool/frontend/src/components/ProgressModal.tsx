@@ -3,22 +3,28 @@ import React from "react";
 import styles from "./ProgressModal.module.css";
 
 interface ProgressModalProps {
+  oneFile: boolean;
   isOpen: boolean;
   progress: number; // 0-100
   currentStep: string;
+  elapsedTime?: string;
+  currentFileElapsedTime?: string;
 }
 
 const ProgressModal: React.FC<ProgressModalProps> = ({
+  oneFile,
   isOpen,
   progress,
   currentStep,
+  elapsedTime,
+  currentFileElapsedTime,
 }) => {
   if (!isOpen) return null;
 
   return (
     <div className={styles.modalOverlay}>
       <div className={styles.modalContent}>
-        <h2 className={styles.modalTitle}>Processing Files</h2>
+        <h2 className={styles.modalTitle}>Processing File(s)</h2>
         <div className={styles.progressContainer}>
           <div className={styles.progressBarWrapper}>
             <div
@@ -29,6 +35,16 @@ const ProgressModal: React.FC<ProgressModalProps> = ({
           <p className={styles.progressText}>{progress}%</p>
         </div>
         <p className={styles.currentStep}>{currentStep}</p>
+        {!oneFile && (
+          <p className={styles.currentStep}>
+            Time Elapsed (Current File): {elapsedTime} ({currentFileElapsedTime})
+          </p>
+        )}
+        {oneFile && (
+          <p className={styles.currentStep}>
+            Time Elapsed: {elapsedTime}
+          </p>
+        )}
       </div>
     </div>
   );

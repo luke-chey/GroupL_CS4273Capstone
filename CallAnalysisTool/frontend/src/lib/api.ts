@@ -1,20 +1,18 @@
 import type { DispatcherRecord, FileGrade } from "@/types/dispatcher";
 
 const API_PORT = process.env.NEXT_PUBLIC_API_PORT || "5001";
+const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
 export function getApiBaseUrl(): string {
-  let base = `http://127.0.0.1:${API_PORT}`
-
-  if (process.env.NEXT_PUBLIC_API_URL) {
-    base = process.env.NEXT_PUBLIC_API_URL;
+  if (API_URL) {
+    return API_URL;
   }
 
   if (typeof window !== "undefined") {
-    base = `${window.location.protocol}//${window.location.hostname}:${API_PORT}`;
+    return `${window.location.protocol}//${window.location.hostname}:${API_PORT}`;
   }
 
-  console.log(base);
-  return base;
+  return `http://127.0.0.1:${API_PORT}`;
 }
 
 export interface ApiResponse {
@@ -242,6 +240,29 @@ export async function fetchGradeFile(filename: string): Promise<FileGrade> {
 
 export async function fetchBackendFile<T>(filename: string): Promise<T> {
   return fetchJson<T>(`/api/files/${encodeURIComponent(filename)}`);
+}
+
+export async function putBackendFile<TResponse = unknown>(
+  filename: string,
+  data: unknown
+): Promise<TResponse> {
+  const response = await fetch(
+    `${getApiBaseUrl()}/api/files/${encodeURIComponent(filename)}`,
+    {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(data),
+    }
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => response.statusText);
+    throw new Error(`API error (${response.status}): ${errorText || response.statusText}`);
+  }
+
+  return response.json();
 }
 
 export function buildBackendFileUrl(filename: string): string {

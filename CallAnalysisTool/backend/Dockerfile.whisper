@@ -19,18 +19,44 @@ ARG TRANSFORMERS_CACHE_PRELOAD=/preload_cache
 ARG SENTENCE_TRANSFORMERS_HOME_PRELOAD=/preload_cache
 ARG TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=true
 ARG HF_HOME=/root/.cache/huggingface
-ARG TRANSFORMERS_CACHE=/root/.cache/huggingface
+ARG HF_HOME=/root/.cache/huggingface
 ARG SENTENCE_TRANSFORMERS_HOME=/root/.cache/huggingface
+ARG HF_TOKEN
 
 # Configure a preload cache location so we can bake models into the image
+ENV HF_TOKEN=${HF_TOKEN}
 ENV HF_HOME=${HF_HOME_PRELOAD}
-ENV TRANSFORMERS_CACHE=${TRANSFORMERS_CACHE_PRELOAD}
 ENV SENTENCE_TRANSFORMERS_HOME=${SENTENCE_TRANSFORMERS_HOME_PRELOAD}
 ENV TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=${TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD}
 
 # Pre-download WhisperX models and sentence-transformers into the preload cache
-RUN python -c "import whisperx; whisperx.load_model('large-v3', 'cpu', compute_type='int8'); whisperx.load_align_model('en', 'cpu')"
-RUN python -c "from sentence_transformers import SentenceTransformer; model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2'); model.save('/preload_cache/all-MiniLM-L6-v2')"
+RUN python - <<EOF
+import whisperx
+whisperx.load_model('large-v3', 'cpu', compute_type='int8')
+whisperx.load_align_model('en', 'cpu')
+EOF
+
+# Download pyannote diarization model
+RUN python - <<EOF
+import os
+from pyannote.audio import Pipeline
+
+token = os.environ.get("HF_TOKEN")
+if not token:
+    raise RuntimeError("HF_TOKEN required for pyannote preload")
+
+Pipeline.from_pretrained(
+    "pyannote/speaker-diarization-3.1",
+    use_auth_token=token
+)
+EOF
+
+# Sentence transformer
+RUN python - <<EOF
+from sentence_transformers import SentenceTransformer
+model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
+model.save('/preload_cache/all-MiniLM-L6-v2')
+EOF
 
 # Copy an entrypoint that will initialize named volumes from the baked preload cache
 RUN mkdir -p /usr/local/bin
@@ -46,12 +72,12 @@ RUN echo '#!/bin/sh' > /usr/local/bin/init_models.sh && \
     echo '  mkdir -p /app/models' >> /usr/local/bin/init_models.sh && \
     echo '  cp -a /preload_cache/all-MiniLM-L6-v2 /app/models/' >> /usr/local/bin/init_models.sh && \
     echo 'fi' >> /usr/local/bin/init_models.sh && \
-    echo 'exec tail -f /dev/null' >> /usr/local/bin/init_models.sh && \
+    echo 'touch /app/models/.seeded' >> /usr/local/bin/init_models.sh && \
+    echo 'echo "Whisper model cache seeding complete."' >> /usr/local/bin/init_models.sh && \
     chmod +x /usr/local/bin/init_models.sh
 
 # Reset HF env vars to runtime locations
 ENV HF_HOME=${HF_HOME}
-ENV TRANSFORMERS_CACHE=${TRANSFORMERS_CACHE}
 ENV SENTENCE_TRANSFORMERS_HOME=${SENTENCE_TRANSFORMERS_HOME}
 
 # Entrypoint will populate mounted volumes from the preload cache on first run
