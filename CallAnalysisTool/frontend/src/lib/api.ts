@@ -242,6 +242,29 @@ export async function fetchBackendFile<T>(filename: string): Promise<T> {
   return fetchJson<T>(`/api/files/${encodeURIComponent(filename)}`);
 }
 
+export async function putBackendFile<TResponse = unknown>(
+  filename: string,
+  data: unknown
+): Promise<TResponse> {
+  const response = await fetch(
+    `${getApiBaseUrl()}/api/files/${encodeURIComponent(filename)}`,
+    {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(data),
+    }
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => response.statusText);
+    throw new Error(`API error (${response.status}): ${errorText || response.statusText}`);
+  }
+
+  return response.json();
+}
+
 export function buildBackendFileUrl(filename: string): string {
   return `${getApiBaseUrl()}/api/files/${encodeURIComponent(filename)}`;
 }

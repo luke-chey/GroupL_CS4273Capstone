@@ -1,5 +1,5 @@
 "use client";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Dispatcher, DispatcherRecord, FileParts } from "@/types/dispatcher";
 import {
@@ -9,7 +9,7 @@ import {
   CardDescription,
   CardContent,
 } from "@/components/ui/card";
-import PlayerController from "./PlayerController/PlayerController";
+import PlayerController, { PlayerControllerHandle } from "./PlayerController/PlayerController";
 
 /* =========================
   Types
@@ -179,6 +179,10 @@ const DispatcherDetails = ({
   const [dispatchers, setDispatchers] = useState<Dispatcher[]>([]);
   const [batchPages, setBatchPages] = useState<BatchPage[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [isEditingTranscript, setIsEditingTranscript] = useState(false);
+  const [transcriptSaveMessage, setTranscriptSaveMessage] = useState("");
+  const [isTranscriptSaving, setIsTranscriptSaving] = useState(false);
+  const playerControllerRef = useRef<PlayerControllerHandle | null>(null);
 
   /* -------- Load localStorage -------- */
   const loadLocalData = () => {
@@ -236,7 +240,6 @@ const DispatcherDetails = ({
     dispatcherMap.get(currentPage?.dispatcherId || "") || dispatcher;
 
   const records = activeDispatcher.records || [];
-  const audioCount = records.filter((record) => Boolean(record.audioFile)).length;
   const transcripts = activeDispatcher.files?.transcriptFiles || [];
   const grades = activeDispatcher.grades || {};
   const recordByTranscript = new Map<string, DispatcherRecord>(
@@ -259,6 +262,32 @@ const DispatcherDetails = ({
   const matchedAudio = currentRecord?.audioFile;
 
   const overallGrade = calculateOverallGrade(transcripts, grades);
+
+  const handleEditButtonClick = async () => {
+    if (!isEditingTranscript) {
+      setTranscriptSaveMessage("");
+      setIsEditingTranscript(true);
+      return;
+    }
+
+    setIsTranscriptSaving(true);
+    setTranscriptSaveMessage("");
+
+    try {
+      const saved = await playerControllerRef.current?.saveTranscriptChanges();
+      if (saved) {
+        setTranscriptSaveMessage("Transcript saved.");
+      } else {
+        setTranscriptSaveMessage("Failed to save transcript.");
+      }
+    } catch (error) {
+      console.error("Error saving transcript:", error);
+      setTranscriptSaveMessage("Failed to save transcript.");
+    } finally {
+      setIsTranscriptSaving(false);
+      setIsEditingTranscript(false);
+    }
+  };
 
   /* =========================
      UI
@@ -361,13 +390,41 @@ const DispatcherDetails = ({
             <CardDescription>{matchedAudio}</CardDescription>
           </CardHeader>
 
-          <CardContent>
+          <CardContent>              
+            <div className="mb-4 flex justify-end">
+              <button
+                type="button"
+                onClick={handleEditButtonClick}
+                disabled={!currentTranscript || isTranscriptSaving}
+                className={paginationButtonClassName}
+              >
+                {isTranscriptSaving
+                  ? "Saving..."
+                  : isEditingTranscript
+                    ? "Save Edits"
+                    : "Edit Transcript"}
+              </button>
+            </div>
+
             {matchedAudio ? (
               <>
                 <PlayerController
+                  ref={playerControllerRef}
                   transcriptFile={currentTranscript}
                   audioFile={matchedAudio}
+                  editable={isEditingTranscript}
                 />
+                {transcriptSaveMessage ? (
+                  <p
+                    className={`mt-3 text-sm ${
+                      transcriptSaveMessage.toLowerCase().includes("failed")
+                        ? "text-red-600"
+                        : "text-green-600"
+                    }`}
+                  >
+                    {transcriptSaveMessage}
+                  </p>
+                ) : null}
               </>
             ) : (
               <p className="text-gray-500">No audio available</p>
