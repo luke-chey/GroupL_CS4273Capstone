@@ -12,14 +12,60 @@ import {
 } from "@/components/ui/card";
 import { seedDispatchers } from "@/utils/seedDispatchers";
 
-type SortField = "grade" | "name";
+type SortField = "grade" | "name" | "date";
 type SortDirection = "desc" | "asc";
+type DispatcherWithMetrics = Dispatcher & {
+  overallGrade: number;
+  latestDisplayCallDate: Date | null;
+};
+
+const parseCallDateFromFilename = (filename: string): Date | null => {
+  const match = filename.match(
+    /^(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})_/
+  );
+  if (!match) {
+    return null;
+  }
+
+  const [, year, month, day, hour, minute, second] = match;
+  const date = new Date(
+    Number(year),
+    Number(month) - 1,
+    Number(day),
+    Number(hour),
+    Number(minute),
+    Number(second)
+  );
+
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const formatDateForInput = (date: Date): string => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const formatDisplayDate = (date: Date | null): string =>
+  date ? date.toLocaleDateString() : "Unknown";
+
+const latestDate = (dates: Date[]): Date | null => {
+  if (dates.length === 0) {
+    return null;
+  }
+
+  return new Date(Math.max(...dates.map((date) => date.getTime())));
+};
 
 const DispatcherList = () => {
   const [dispatchers, setDispatchers] = useState<Dispatcher[]>([]);
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [sortField, setSortField] = useState<SortField>("grade");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
+  const [fromDate, setFromDate] = useState<string>("");
+  const [toDate, setToDate] = useState<string>("");
+  const [includeUnknownDate, setIncludeUnknownDate] = useState(false);
 
   // load all dispatchers
   const loadDispatchers = () => {
@@ -37,36 +83,126 @@ const DispatcherList = () => {
   }, []);
 
   // Compute overall grade
-  const dispatchersWithGrades = dispatchers.map((dispatcher) => {
-    const transcriptFiles = dispatcher.files?.transcriptFiles || [];
-    const grades = dispatcher.grades || {};
-    const gradedFiles = transcriptFiles.filter((file) => grades[file]);
-    const overallGrade =
-      gradedFiles.length > 0
-        ? gradedFiles.reduce(
-            (sum, file) => sum + grades[file].grade_percentage,
-            0
-          ) / gradedFiles.length
-        : 0;
-    return { ...dispatcher, overallGrade };
-  });
+  const dispatchersWithGrades: DispatcherWithMetrics[] = dispatchers.map(
+    (dispatcher) => {
+      const transcriptFiles = dispatcher.files?.transcriptFiles || [];
+      const grades = dispatcher.grades || {};
+      const gradedFiles = transcriptFiles.filter((file) => grades[file]);
+      const overallGrade =
+        gradedFiles.length > 0
+          ? gradedFiles.reduce(
+              (sum, file) => sum + grades[file].grade_percentage,
+              0
+            ) / gradedFiles.length
+          : 0;
+      return {
+        ...dispatcher,
+        overallGrade,
+        latestDisplayCallDate: null,
+      };
+    }
+  );
 
-  //  search implemented
-  const filteredDispatchers = dispatchersWithGrades.filter((d) =>
+  // search by dispatcher name
+  const searchFilteredDispatchers = dispatchersWithGrades.filter((d) =>
     d.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const compareByNameAsc = (
-    a: Dispatcher & { overallGrade: number },
-    b: Dispatcher & { overallGrade: number }
-  ) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+  const isDateRangeActive = Boolean(fromDate || toDate);
+  const fromBoundary = fromDate ? new Date(`${fromDate}T00:00:00`) : null;
+  const toBoundary = toDate ? new Date(`${toDate}T23:59:59.999`) : null;
+
+  const dateFilteredDispatchers: DispatcherWithMetrics[] =
+    searchFilteredDispatchers
+      .map((dispatcher) => {
+        const transcriptFiles = dispatcher.files?.transcriptFiles || [];
+        const grades = dispatcher.grades || {};
+        const gradedFiles = transcriptFiles.filter((file) => grades[file]);
+
+        const parsedDates = gradedFiles.map((filename) =>
+          parseCallDateFromFilename(filename)
+        );
+        const knownDates = parsedDates.filter(
+          (date): date is Date => date !== null
+        );
+        const hasUnknownDateGrade = parsedDates.some((date) => date === null);
+
+        const inRangeDates = knownDates.filter((date) => {
+          const afterFrom = fromBoundary ? date >= fromBoundary : true;
+          const beforeTo = toBoundary ? date <= toBoundary : true;
+          return afterFrom && beforeTo;
+        });
+
+        const latestKnownCallDate = latestDate(knownDates);
+        const latestInRangeCallDate = latestDate(inRangeDates);
+        const latestDisplayCallDate = isDateRangeActive
+          ? latestInRangeCallDate
+          : latestKnownCallDate;
+
+        const includeByDateRange =
+          !isDateRangeActive ||
+          inRangeDates.length > 0 ||
+          (includeUnknownDate && hasUnknownDateGrade);
+        if (!includeByDateRange) {
+          return null;
+        }
+
+        return {
+          ...dispatcher,
+          latestDisplayCallDate,
+        };
+      })
+      .filter(
+        (dispatcher): dispatcher is DispatcherWithMetrics => dispatcher !== null
+      );
+
+  const applyPresetRange = (days: number) => {
+    const today = new Date();
+    const from = new Date();
+    from.setDate(today.getDate() - (days - 1));
+    setFromDate(formatDateForInput(from));
+    setToDate(formatDateForInput(today));
+  };
+
+  const clearDateFilters = () => {
+    setFromDate("");
+    setToDate("");
+    setIncludeUnknownDate(false);
+  };
+
+  const compareByNameAsc = (a: DispatcherWithMetrics, b: DispatcherWithMetrics) =>
+    a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
 
   const sortByGradeDescending = (
-    a: Dispatcher & { overallGrade: number },
-    b: Dispatcher & { overallGrade: number }
+    a: DispatcherWithMetrics,
+    b: DispatcherWithMetrics
   ) => {
     if (b.overallGrade !== a.overallGrade) {
       return b.overallGrade - a.overallGrade;
+    }
+
+    return compareByNameAsc(a, b);
+  };
+
+  const sortByDate = (a: DispatcherWithMetrics, b: DispatcherWithMetrics) => {
+    const aDate = a.latestDisplayCallDate;
+    const bDate = b.latestDisplayCallDate;
+
+    // Keep unknown dates at the bottom for both sort directions.
+    if (!aDate && bDate) {
+      return 1;
+    }
+    if (aDate && !bDate) {
+      return -1;
+    }
+    if (!aDate && !bDate) {
+      return compareByNameAsc(a, b);
+    }
+
+    const aTime = (aDate as Date).getTime();
+    const bTime = (bDate as Date).getTime();
+    if (aTime !== bTime) {
+      return sortDirection === "desc" ? bTime - aTime : aTime - bTime;
     }
 
     return compareByNameAsc(a, b);
@@ -76,7 +212,7 @@ const DispatcherList = () => {
     .sort(sortByGradeDescending)
     .slice(0, 3);
 
-  const sortedDispatchers = [...filteredDispatchers].sort((a, b) => {
+  const sortedDispatchers = [...dateFilteredDispatchers].sort((a, b) => {
     if (sortField === "grade") {
       if (a.overallGrade !== b.overallGrade) {
         return sortDirection === "desc"
@@ -87,12 +223,17 @@ const DispatcherList = () => {
       return compareByNameAsc(a, b);
     }
 
+    if (sortField === "date") {
+      return sortByDate(a, b);
+    }
+
     return sortDirection === "asc"
       ? compareByNameAsc(a, b)
       : compareByNameAsc(b, a);
   });
+
   const gradeRankById = new Map(
-    [...filteredDispatchers]
+    [...dateFilteredDispatchers]
       .sort(sortByGradeDescending)
       .map((dispatcher, index) => [dispatcher.id, index + 1] as const)
   );
@@ -172,6 +313,73 @@ const DispatcherList = () => {
         <h2 className="text-xl sm:text-2xl font-bold mb-4 text-center">
           All Dispatchers
         </h2>
+        <div className="mb-4 border border-gray-200 rounded-lg p-4 bg-gray-50">
+          <div className="flex flex-col sm:flex-row sm:items-end gap-3">
+            <div className="flex flex-col">
+              <label htmlFor="from-date" className="text-sm font-medium mb-1">
+                From
+              </label>
+              <input
+                id="from-date"
+                type="date"
+                value={fromDate}
+                onChange={(e) => setFromDate(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-md bg-white"
+              />
+            </div>
+            <div className="flex flex-col">
+              <label htmlFor="to-date" className="text-sm font-medium mb-1">
+                To
+              </label>
+              <input
+                id="to-date"
+                type="date"
+                value={toDate}
+                onChange={(e) => setToDate(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-md bg-white"
+              />
+            </div>
+            <div className="flex flex-wrap gap-2 sm:ml-2">
+              <button
+                type="button"
+                onClick={() => applyPresetRange(7)}
+                className="px-3 py-2 text-sm border border-gray-300 rounded-md bg-white hover:bg-gray-100"
+              >
+                Last 7 days
+              </button>
+              <button
+                type="button"
+                onClick={() => applyPresetRange(30)}
+                className="px-3 py-2 text-sm border border-gray-300 rounded-md bg-white hover:bg-gray-100"
+              >
+                Last 30 days
+              </button>
+              <button
+                type="button"
+                onClick={() => applyPresetRange(90)}
+                className="px-3 py-2 text-sm border border-gray-300 rounded-md bg-white hover:bg-gray-100"
+              >
+                Last 90 days
+              </button>
+              <button
+                type="button"
+                onClick={clearDateFilters}
+                className="px-3 py-2 text-sm border border-gray-300 rounded-md bg-white hover:bg-gray-100"
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+          <label className="mt-3 inline-flex items-center gap-2 text-sm text-gray-700">
+            <input
+              type="checkbox"
+              checked={includeUnknownDate}
+              onChange={(e) => setIncludeUnknownDate(e.target.checked)}
+              disabled={!isDateRangeActive}
+            />
+            Include unknown date
+          </label>
+        </div>
         {sortedDispatchers.length === 0 ? (
           <p className="text-gray-500 text-center">
             No dispatchers found.
@@ -244,6 +452,35 @@ const DispatcherList = () => {
                       </span>
                     </span>
                   </th>
+                  <th
+                    className="px-4 py-2 text-left text-sm font-medium cursor-pointer"
+                    onClick={() => {
+                      if (sortField === "date") {
+                        setSortDirection((prev) =>
+                          prev === "desc" ? "asc" : "desc"
+                        );
+                        return;
+                      }
+
+                      setSortField("date");
+                      setSortDirection("desc");
+                    }}
+                  >
+                    <span className="inline-flex items-center gap-1">
+                      <span>Date</span>
+                      <span
+                        className={
+                          sortField === "date" ? "font-extrabold" : "font-normal"
+                        }
+                      >
+                        {sortField === "date"
+                          ? sortDirection === "desc"
+                            ? "↓"
+                            : "↑"
+                          : "↕"}
+                      </span>
+                    </span>
+                  </th>
                   <th className="px-4 py-2 text-left text-sm font-medium">
                     Transcript Files
                   </th>
@@ -272,6 +509,9 @@ const DispatcherList = () => {
                       )}`}
                     >
                       {dispatcher.overallGrade.toFixed(1)}%
+                    </td>
+                    <td className="px-4 py-2 text-sm">
+                      {formatDisplayDate(dispatcher.latestDisplayCallDate)}
                     </td>
                     <td className="px-4 py-2 text-sm">
                       {dispatcher.files.transcriptFiles.length}
