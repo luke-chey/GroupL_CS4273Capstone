@@ -1,6 +1,6 @@
 "use client";
 import { AudioPlayer } from "../AudioPlayer/AudioPlayer";
-import { forwardRef, useEffect, useImperativeHandle, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useState, useCallback } from "react";
 import { TranscriptPlayer } from "../TranscriptPlayer/TranscriptPlayer";
 import {
   buildBackendFileUrl,
@@ -100,7 +100,7 @@ const PlayerController = forwardRef<PlayerControllerHandle, PlayerControllerProp
     });
   };
 
-  const saveTranscriptChanges = async () => {
+  const saveTranscriptChanges = useCallback(async () => {
     if (!editable || !transcriptFile || !editableTranscription) {
       return false;
     }
@@ -116,11 +116,11 @@ const PlayerController = forwardRef<PlayerControllerHandle, PlayerControllerProp
       console.error("Error saving transcription:", error);
       return false;
     }
-  };
+  }, [editable, editableTranscription, transcriptFile]);
 
   useImperativeHandle(ref, () => ({
     saveTranscriptChanges,
-  }), [editable, transcriptFile, editableTranscription]);
+  }), [saveTranscriptChanges]);
 
   return (
     <>

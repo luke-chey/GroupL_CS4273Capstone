@@ -20,14 +20,6 @@ interface TranscriptPlayerProps {
   dispatcherName?: string;
 }
 
-interface Message {
-  id: number;
-  speaker: string;
-  text: string;
-  start: number;
-  end: number;
-}
-
 function TranscriptPlayer({
   transcriptData,
   currentTime,
