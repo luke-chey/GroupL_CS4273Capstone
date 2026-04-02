@@ -68,6 +68,11 @@ interface DispatcherRecordsResponse {
   records?: string[];
 }
 
+export interface DispatcherDateRangeParams {
+  startDate?: string;
+  endDate?: string;
+}
+
 interface RecordDetailsResponse {
   audioFiles?: string[];
   cdrFiles?: string[];
@@ -75,6 +80,10 @@ interface RecordDetailsResponse {
   gradeFiles?: string[];
   otherFiles?: string[];
 }
+
+type DispatcherSummaryItem = NonNullable<
+  DispatcherSummaryResponse["dispatchers"]
+>[number];
 
 /**
  * Upload a JSON file to the API and get analysis results
@@ -123,7 +132,7 @@ async function postUploadRequest(
     if (typeof data === "string") {
       try {
         return JSON.parse(data);
-      } catch (e) {
+      } catch {
         throw new Error("Invalid response format from API");
       }
     }
@@ -162,7 +171,7 @@ export function getNotAskedQuestions(response: ApiResponse): Question[] {
   // Convert grades object to array and filter for "Not Asked" questions
   return Object.entries(response.grades)
     .filter(
-      ([questionId, grade]) =>
+      ([, grade]) =>
         grade.status === "Not Asked" || grade.code === "2"
     )
     .map(([questionId, grade]) => ({
@@ -181,7 +190,7 @@ export function getQuestionsAskedIncorrectly(
 
   return Object.entries(response.grades)
     .filter(
-      ([questionId, grade]) =>
+      ([, grade]) =>
         grade.status === "Asked Incorrectly" || grade.code === "3"
     )
     .map(([questionId, grade]) => ({
@@ -200,15 +209,54 @@ async function fetchJson<T>(path: string): Promise<T> {
   return response.json();
 }
 
-export async function fetchDispatchers(): Promise<DispatcherSummaryResponse> {
-  return fetchJson<DispatcherSummaryResponse>("/api/dispatchers");
+function formatDateForDispatcherQuery(dateValue?: string): string | undefined {
+  if (!dateValue) {
+    return undefined;
+  }
+
+  const [year, month, day] = dateValue.split("-");
+  if (!year || !month || !day) {
+    return undefined;
+  }
+
+  return `${year}${month}${day}`;
 }
 
+function buildDispatcherQuery(params?: DispatcherDateRangeParams): string {
+  const searchParams = new URLSearchParams();
+  const startDate = formatDateForDispatcherQuery(params?.startDate);
+  const endDate = formatDateForDispatcherQuery(params?.endDate);
+
+  if (startDate) {
+    searchParams.set("start_date", startDate);
+  }
+
+  if (endDate) {
+    searchParams.set("end_date", endDate);
+  }
+
+  const query = searchParams.toString();
+  return query ? `?${query}` : "";
+}
+
+export async function fetchDispatchers(
+  params?: DispatcherDateRangeParams
+): Promise<DispatcherSummaryResponse> {
+  return fetchJson<DispatcherSummaryResponse>(
+    `/api/dispatchers${buildDispatcherQuery(params)}`
+  );
+}
+
+export type { DispatcherSummaryItem, DispatcherSummaryResponse };
+
 export async function fetchDispatcherRecords(
-  dispatcherName: string
+  dispatcherName: string,
+  params?: DispatcherDateRangeParams
 ): Promise<string[]> {
   const response = await fetchJson<DispatcherRecordsResponse>(
-    `/api/dispatchers/${encodeURIComponent(dispatcherName)}`
+    `/api/dispatchers/${encodeURIComponent(dispatcherName)}${buildDispatcherQuery(
+      params
+    )}`
   );
 
   return Array.isArray(response.records) ? response.records : [];

@@ -16,6 +16,8 @@ export default function DispatcherDetailPage() {
   const searchParams = useSearchParams();
   // Batch mode is opt-in via upload redirect (`?batch=1`).
   const batchMode = searchParams.get("batch") === "1";
+  const startDate = searchParams.get("startDate") || undefined;
+  const endDate = searchParams.get("endDate") || undefined;
   const [dispatcher, setDispatcher] = useState<Dispatcher | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -25,7 +27,10 @@ export default function DispatcherDetailPage() {
     const loadDispatcher = async () => {
       setLoading(true);
       try {
-        const recordNames = await fetchDispatcherRecords(dispatcherName);
+        const recordNames = await fetchDispatcherRecords(dispatcherName, {
+          startDate,
+          endDate,
+        });
 
         const records = (
           await Promise.all(
@@ -112,7 +117,7 @@ export default function DispatcherDetailPage() {
     };
 
     loadDispatcher();
-  }, [params.name, router]);
+  }, [endDate, params.name, router, startDate]);
 
   if (loading) {
     return (
@@ -133,5 +138,12 @@ export default function DispatcherDetailPage() {
     );
   }
 
-  return <DispatcherDetails dispatcher={dispatcher} batchMode={batchMode} />;
+  return (
+    <DispatcherDetails
+      dispatcher={dispatcher}
+      batchMode={batchMode}
+      startDate={startDate}
+      endDate={endDate}
+    />
+  );
 }

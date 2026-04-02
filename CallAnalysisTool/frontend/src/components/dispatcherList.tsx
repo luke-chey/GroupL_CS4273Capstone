@@ -1,81 +1,212 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { fetchDispatchers } from "@/lib/api";
-import { Dispatcher } from "@/types/dispatcher";
+import type { DispatcherSummaryItem } from "@/lib/api";
+import { Button } from "@/components/ui/button";
 import {
   Card,
-  CardTitle,
   CardContent,
+  CardTitle,
 } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Dispatcher } from "@/types/dispatcher";
 
 type SortField = "grade" | "name";
 type SortDirection = "desc" | "asc";
 
+type DispatcherQueryParams = {
+  startDate?: string;
+  endDate?: string;
+};
+
+const normalizeDispatchers = (
+  backendDispatchers: DispatcherSummaryItem[]
+): Dispatcher[] =>
+  backendDispatchers.map((dispatcher, index) => ({
+    id: dispatcher.name || `${index}`,
+    name: dispatcher.name || "Unknown",
+    overallGrade:
+      typeof dispatcher.overallGrade === "number" ? dispatcher.overallGrade : 0,
+    numRecords: dispatcher.numRecords || 0,
+    numTranscripts: dispatcher.numTranscripts || 0,
+    numGrades: dispatcher.numGrades || 0,
+    files: {
+      transcriptFiles: [],
+      audioFiles: [],
+    },
+    grades: {},
+  }));
+
+const compareByNameAsc = (
+  a: Dispatcher & { overallGrade: number },
+  b: Dispatcher & { overallGrade: number }
+) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+
+const sortByGradeDescending = (
+  a: Dispatcher & { overallGrade: number },
+  b: Dispatcher & { overallGrade: number }
+) => {
+  if (b.overallGrade !== a.overallGrade) {
+    return b.overallGrade - a.overallGrade;
+  }
+
+  return compareByNameAsc(a, b);
+};
+
+const gradeColor = (grade: number) =>
+  grade >= 80
+    ? "text-green-600"
+    : grade >= 50
+      ? "text-yellow-500"
+      : "text-red-600";
+
+const formatDateInputValue = (date: Date): string => {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
 const DispatcherList = () => {
+  const pathname = usePathname();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [dispatchers, setDispatchers] = useState<Dispatcher[]>([]);
   const [searchQuery, setSearchQuery] = useState<string>("");
+  const [startDate, setStartDate] = useState<string>(
+    searchParams.get("startDate") || ""
+  );
+  const [endDate, setEndDate] = useState<string>(
+    searchParams.get("endDate") || ""
+  );
   const [sortField, setSortField] = useState<SortField>("grade");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [errorMessage, setErrorMessage] = useState<string>("");
 
-  // load all dispatchers from backend
-  const loadDispatchers = async () => {
+  const loadDispatchers = async (params?: DispatcherQueryParams) => {
+    setIsLoading(true);
+    setErrorMessage("");
+
     try {
-      const data = await fetchDispatchers();
-      const backendDispatchers: any[] = data?.dispatchers || [];
+      const data = await fetchDispatchers(params);
+      const backendDispatchers = Array.isArray(data?.dispatchers)
+        ? data.dispatchers
+        : [];
 
-      const normalized = backendDispatchers.map((d, index) => ({
-        id: d.name || `${index}`,
-        name: d.name || "Unknown",
-        overallGrade: typeof d.overallGrade === "number" ? d.overallGrade : 0,
-        numRecords: d.numRecords || 0,
-        numTranscripts: d.numTranscripts || 0,
-        numGrades: d.numGrades || 0,
-        files: {
-          transcriptFiles: [],
-          audioFiles: [],
-        },
-        grades: {},
-      })) as Dispatcher[];
-
-      setDispatchers(normalized);
+      setDispatchers(normalizeDispatchers(backendDispatchers));
     } catch (error) {
       console.error("Error loading dispatchers:", error);
       setDispatchers([]);
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "Unable to load dispatchers for the selected date range."
+      );
+    } finally {
+      setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    loadDispatchers();
-  }, []);
+    const urlStartDate = searchParams.get("startDate") || "";
+    const urlEndDate = searchParams.get("endDate") || "";
 
-  // Keep backend-reported grade as source of truth
-  const dispatchersWithGrades = dispatchers.map((dispatcher) => ({
-    ...dispatcher,
-    overallGrade: typeof dispatcher.overallGrade === "number" ? dispatcher.overallGrade : 0,
-  }));
+    setStartDate(urlStartDate);
+    setEndDate(urlEndDate);
+    loadDispatchers({
+      startDate: urlStartDate || undefined,
+      endDate: urlEndDate || undefined,
+    });
+  }, [searchParams]);
 
-  //  search implemented
-  const filteredDispatchers = dispatchersWithGrades.filter((d) =>
-    d.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  const compareByNameAsc = (
-    a: Dispatcher & { overallGrade: number },
-    b: Dispatcher & { overallGrade: number }
-  ) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
-
-  const sortByGradeDescending = (
-    a: Dispatcher & { overallGrade: number },
-    b: Dispatcher & { overallGrade: number }
+  const updateDateSearchParams = (
+    nextStartDate?: string,
+    nextEndDate?: string
   ) => {
-    if (b.overallGrade !== a.overallGrade) {
-      return b.overallGrade - a.overallGrade;
+    const nextParams = new URLSearchParams(searchParams.toString());
+
+    if (nextStartDate) {
+      nextParams.set("startDate", nextStartDate);
+    } else {
+      nextParams.delete("startDate");
     }
 
-    return compareByNameAsc(a, b);
+    if (nextEndDate) {
+      nextParams.set("endDate", nextEndDate);
+    } else {
+      nextParams.delete("endDate");
+    }
+
+    const queryString = nextParams.toString();
+    router.replace(queryString ? `${pathname}?${queryString}` : pathname);
   };
+
+  const handleDateSearch = () => {
+    updateDateSearchParams(startDate || undefined, endDate || undefined);
+  };
+
+  const handleClearDateSearch = () => {
+    setStartDate("");
+    setEndDate("");
+    updateDateSearchParams();
+  };
+
+  const applyQuickRange = (nextStartDate: string, nextEndDate: string) => {
+    setStartDate(nextStartDate);
+    setEndDate(nextEndDate);
+    updateDateSearchParams(nextStartDate, nextEndDate);
+  };
+
+  const handleTodaySearch = () => {
+    const today = formatDateInputValue(new Date());
+    applyQuickRange(today, today);
+  };
+
+  const handleLast7DaysSearch = () => {
+    const end = new Date();
+    const start = new Date();
+    start.setDate(start.getDate() - 6);
+
+    applyQuickRange(
+      formatDateInputValue(start),
+      formatDateInputValue(end)
+    );
+  };
+
+  const handleLast30DaysSearch = () => {
+    const end = new Date();
+    const start = new Date();
+    start.setDate(start.getDate() - 29);
+
+    applyQuickRange(
+      formatDateInputValue(start),
+      formatDateInputValue(end)
+    );
+  };
+
+  const handleThisYearSearch = () => {
+    const end = new Date();
+    const start = new Date(end.getFullYear(), 0, 1);
+
+    applyQuickRange(
+      formatDateInputValue(start),
+      formatDateInputValue(end)
+    );
+  };
+
+  const dispatchersWithGrades = dispatchers.map((dispatcher) => ({
+    ...dispatcher,
+    overallGrade:
+      typeof dispatcher.overallGrade === "number" ? dispatcher.overallGrade : 0,
+  }));
+
+  const filteredDispatchers = dispatchersWithGrades.filter((dispatcher) =>
+    dispatcher.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   const topDispatchers = [...dispatchersWithGrades]
     .sort(sortByGradeDescending)
@@ -96,64 +227,162 @@ const DispatcherList = () => {
       ? compareByNameAsc(a, b)
       : compareByNameAsc(b, a);
   });
+
   const gradeRankById = new Map(
     [...filteredDispatchers]
       .sort(sortByGradeDescending)
       .map((dispatcher, index) => [dispatcher.id, index + 1] as const)
   );
 
-  // get grade color
-  const gradeColor = (grade: number) =>
-    grade >= 80
-      ? "text-green-600"
-      : grade >= 50
-        ? "text-yellow-500"
-        : "text-red-600";
+  const buildDispatcherHref = (dispatcherName: string) => {
+    const query = new URLSearchParams();
+
+    if (startDate) {
+      query.set("startDate", startDate);
+    }
+
+    if (endDate) {
+      query.set("endDate", endDate);
+    }
+
+    const queryString = query.toString();
+    return queryString
+      ? `/records/${encodeURIComponent(dispatcherName)}?${queryString}`
+      : `/records/${encodeURIComponent(dispatcherName)}`;
+  };
 
   return (
-    <div className="container mx-auto p-4 sm:p-6 max-w-7xl">
-      <h1 className="text-3xl font-bold text-center mb-8">
+    <div className="container mx-auto max-w-7xl p-4 sm:p-6">
+      <h1 className="mb-8 text-center text-3xl font-bold">
         Dispatcher Dashboard
       </h1>
 
-      {/* Search Bar */}
-      {dispatchers.length > 0 && (
-        <div className="mb-6 max-w-md mx-auto">
-          <input
+      <div className="mb-6 space-y-4">
+        <div className="mx-auto max-w-md">
+          <Input
             type="text"
             placeholder="Search dispatchers..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           />
         </div>
+
+        <div className="mx-auto max-w-xl rounded-xl border border-gray-200 bg-gray-50 p-4 shadow-sm">
+          <div className="flex flex-col items-center gap-4 md:flex-row md:items-end md:justify-center">
+            <div className="md:w-44">
+              <label
+                htmlFor="dispatcher-start-date"
+                className="mb-1 block text-sm font-medium text-gray-700"
+              >
+                From
+              </label>
+              <Input
+                id="dispatcher-start-date"
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                max={endDate || undefined}
+              />
+            </div>
+
+            <div className="md:w-44">
+              <label
+                htmlFor="dispatcher-end-date"
+                className="mb-1 block text-sm font-medium text-gray-700"
+              >
+                To
+              </label>
+              <Input
+                id="dispatcher-end-date"
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                min={startDate || undefined}
+              />
+            </div>
+
+            <div className="flex gap-2 md:pb-px">
+              <Button onClick={handleDateSearch} disabled={isLoading}>
+                {isLoading ? "Loading..." : "Search"}
+              </Button>
+              <Button
+                onClick={handleClearDateSearch}
+                disabled={isLoading || (!startDate && !endDate)}
+                className="bg-red-500 text-white hover:bg-red-600"
+              >
+                Reset
+              </Button>
+            </div>
+          </div>
+
+          <div className="mt-4 flex flex-wrap justify-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleTodaySearch}
+              disabled={isLoading}
+            >
+              Today
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleLast7DaysSearch}
+              disabled={isLoading}
+            >
+              Last 7 Days
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleLast30DaysSearch}
+              disabled={isLoading}
+            >
+              Last 30 Days
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleThisYearSearch}
+              disabled={isLoading}
+            >
+              This Year
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      {errorMessage && (
+        <p className="mb-6 text-center text-sm text-red-600">{errorMessage}</p>
       )}
 
-      {/* Top Dispatchers */}
-      {topDispatchers.length > 0 && searchQuery.trim().length === 0 && (
+      {topDispatchers.length > 0 && searchQuery.trim().length === 0 && !isLoading && (
         <div className="mb-10">
-          <h2 className="text-xl sm:text-2xl font-bold mb-4 text-center text-blue-600">
+          <h2 className="mb-4 text-center text-xl font-bold text-blue-600 sm:text-2xl">
             Top Dispatchers
           </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-3">
             {topDispatchers.map((dispatcher, index) => (
-              <Link key={dispatcher.id} href={`/records/${dispatcher.id}`}>
-                <Card className="cursor-pointer hover:shadow-lg transition-shadow h-full flex flex-col relative border-blue-500 border-2">
-                  <span className="absolute top-2 right-2 bg-yellow-400 text-white text-xs font-bold px-2 py-1 mb-1 rounded-full">
+              <Link
+                key={dispatcher.id}
+                href={buildDispatcherHref(dispatcher.id)}
+              >
+                <Card className="relative flex h-full cursor-pointer flex-col border-2 border-blue-500 transition-shadow hover:shadow-lg">
+                  <span className="absolute top-2 right-2 mb-1 rounded-full bg-yellow-400 px-2 py-1 text-xs font-bold text-white">
                     Rank #{index + 1}
                   </span>
-                  <CardContent className="flex-grow flex flex-col justify-between">
-                    <CardTitle className="text-lg font-semibold break-words">
+                  <CardContent className="flex flex-grow flex-col justify-between">
+                    <CardTitle className="break-words text-lg font-semibold">
                       {dispatcher.name}
                     </CardTitle>
                     <p
-                      className={`font-semibold mt-2 ${gradeColor(
+                      className={`mt-2 font-semibold ${gradeColor(
                         dispatcher.overallGrade
                       )}`}
                     >
                       Overall Grade: {dispatcher.overallGrade.toFixed(1)}%
                     </p>
-                    <div className="flex justify-between mt-2 text-xs text-gray-600">
+                    <div className="mt-2 flex justify-between text-xs text-gray-600">
                       <span>Records: {dispatcher.numRecords ?? 0}</span>
                       <span>Grades: {dispatcher.numGrades ?? 0}</span>
                     </div>
@@ -165,25 +394,28 @@ const DispatcherList = () => {
         </div>
       )}
 
-      {/* All Dispatchers Table */}
       <div className="mb-10">
-        <h2 className="text-xl sm:text-2xl font-bold mb-4 text-center">
+        <h2 className="mb-4 text-center text-xl font-bold sm:text-2xl">
           All Dispatchers
         </h2>
-        {sortedDispatchers.length === 0 ? (
-          <p className="text-gray-500 text-center">
-            No dispatchers found.
+        {isLoading ? (
+          <p className="text-center text-gray-500">Loading dispatchers...</p>
+        ) : sortedDispatchers.length === 0 ? (
+          <p className="text-center text-gray-500">
+            {startDate || endDate
+              ? "No dispatchers found for the selected date range."
+              : "No dispatchers found."}
           </p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="min-w-full border border-gray-300 divide-y divide-gray-200">
+            <table className="min-w-full divide-y divide-gray-200 border border-gray-300">
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-4 py-2 text-left text-sm font-medium">
                     Rank
                   </th>
                   <th
-                    className="px-4 py-2 text-left text-sm font-medium cursor-pointer"
+                    className="cursor-pointer px-4 py-2 text-left text-sm font-medium"
                     onClick={() => {
                       if (sortField === "name") {
                         setSortDirection((prev) =>
@@ -212,7 +444,7 @@ const DispatcherList = () => {
                     </span>
                   </th>
                   <th
-                    className="px-4 py-2 text-left text-sm font-medium cursor-pointer"
+                    className="cursor-pointer px-4 py-2 text-left text-sm font-medium"
                     onClick={() => {
                       if (sortField === "grade") {
                         setSortDirection((prev) =>
@@ -229,9 +461,7 @@ const DispatcherList = () => {
                       <span>Overall Grade</span>
                       <span
                         className={
-                          sortField === "grade"
-                            ? "font-extrabold"
-                            : "font-normal"
+                          sortField === "grade" ? "font-extrabold" : "font-normal"
                         }
                       >
                         {sortField === "grade"
@@ -250,7 +480,7 @@ const DispatcherList = () => {
                   </th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
+              <tbody className="divide-y divide-gray-200 bg-white">
                 {sortedDispatchers.map((dispatcher) => (
                   <tr key={dispatcher.id} className="hover:bg-gray-50">
                     <td className="px-4 py-2 text-sm">
@@ -258,7 +488,7 @@ const DispatcherList = () => {
                     </td>
                     <td className="px-4 py-2 text-sm">
                       <Link
-                        href={`/records/${dispatcher.name}`}
+                        href={buildDispatcherHref(dispatcher.name)}
                         className="text-blue-600 hover:underline"
                       >
                         {dispatcher.name}

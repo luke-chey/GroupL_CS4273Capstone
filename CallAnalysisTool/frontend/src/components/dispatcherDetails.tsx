@@ -18,6 +18,8 @@ import PlayerController, { PlayerControllerHandle } from "./PlayerController/Pla
 interface DispatcherDetailsProps {
   dispatcher: Dispatcher;
   batchMode?: boolean;
+  startDate?: string;
+  endDate?: string;
 }
 
 interface BatchPage {
@@ -167,6 +169,19 @@ const getQuestionStatusClassName = (status?: string): string => {
 const paginationButtonClassName =
   "inline-flex items-center justify-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 enabled:cursor-pointer";
 
+const formatDateRangePart = (dateValue?: string): string | null => {
+  if (!dateValue) {
+    return null;
+  }
+
+  const [year, month, day] = dateValue.split("-");
+  if (!year || !month || !day) {
+    return null;
+  }
+
+  return `${Number(month)}/${Number(day)}/${year}`;
+};
+
 /* =========================
    Component
 ========================= */
@@ -174,6 +189,8 @@ const paginationButtonClassName =
 const DispatcherDetails = ({
   dispatcher,
   batchMode = false,
+  startDate,
+  endDate,
 }: DispatcherDetailsProps) => {
   /* -------- State -------- */
   const [dispatchers, setDispatchers] = useState<Dispatcher[]>([]);
@@ -262,6 +279,25 @@ const DispatcherDetails = ({
   const matchedAudio = currentRecord?.audioFile;
 
   const overallGrade = calculateOverallGrade(transcripts, grades);
+  const formattedStartDate = formatDateRangePart(startDate);
+  const formattedEndDate = formatDateRangePart(endDate);
+  const headerTitle =
+    formattedStartDate && formattedEndDate
+      ? `${activeDispatcher.name} (${formattedStartDate} - ${formattedEndDate})`
+      : activeDispatcher.name;
+  const backQuery = new URLSearchParams();
+
+  if (startDate) {
+    backQuery.set("startDate", startDate);
+  }
+
+  if (endDate) {
+    backQuery.set("endDate", endDate);
+  }
+
+  const backHref = backQuery.toString()
+    ? `/records?${backQuery.toString()}`
+    : "/records";
 
   const handleEditButtonClick = async () => {
     if (!isEditingTranscript) {
@@ -297,12 +333,12 @@ const DispatcherDetails = ({
     <div className="container mx-auto p-6">
       {/* Header */}
       <div className="mb-6">
-        <Link href="/records" className="text-blue-500 hover:underline">
+        <Link href={backHref} className="text-blue-500 hover:underline">
           ← Back to Dispatchers
         </Link>
 
         <h1 className="text-3xl font-bold mt-4">
-          {activeDispatcher.name}
+          {headerTitle}
         </h1>
 
         {overallGrade !== null && (
@@ -439,3 +475,4 @@ const DispatcherDetails = ({
 };
 
 export default DispatcherDetails;
+
