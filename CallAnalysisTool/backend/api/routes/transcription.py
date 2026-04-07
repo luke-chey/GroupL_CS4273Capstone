@@ -103,7 +103,10 @@ def transcribe_audio():
 
         print(f"Extracting file to: {file_path}")
         folder_name = process_zip(file_path, output_dir=str(OUTPUT_DIR))
-        os.remove(file_path)
+        try:
+            os.remove(str(OUTPUT_DIR / f"{folder_name}.zip")) # Account for zip file renaming during processing
+        except:
+            print(f"Failed to remove {OUTPUT_DIR / f"{folder_name}.zip"}, continuing anyway")
         file_path = OUTPUT_DIR / folder_name
         audio_file = file_path / f"{folder_name}.wav"
         print(f"Audio file located at: {audio_file}")

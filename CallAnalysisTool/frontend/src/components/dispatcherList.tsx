@@ -14,9 +14,14 @@ import { seedDispatchers } from "@/utils/seedDispatchers";
 
 type SortField = "grade" | "name" | "date";
 type SortDirection = "desc" | "asc";
+type GradedCallMetric = {
+  gradePercentage: number;
+  callDate: Date | null;
+};
 type DispatcherWithMetrics = Dispatcher & {
   overallGrade: number;
   latestDisplayCallDate: Date | null;
+  gradedCalls: GradedCallMetric[];
 };
 
 const parseCallDateFromFilename = (filename: string): Date | null => {
@@ -87,18 +92,24 @@ const DispatcherList = () => {
     (dispatcher) => {
       const transcriptFiles = dispatcher.files?.transcriptFiles || [];
       const grades = dispatcher.grades || {};
-      const gradedFiles = transcriptFiles.filter((file) => grades[file]);
+      const gradedCalls = transcriptFiles
+        .filter((file) => grades[file])
+        .map((file) => ({
+          gradePercentage: grades[file].grade_percentage,
+          callDate: parseCallDateFromFilename(file),
+        }));
       const overallGrade =
-        gradedFiles.length > 0
-          ? gradedFiles.reduce(
-              (sum, file) => sum + grades[file].grade_percentage,
+        gradedCalls.length > 0
+          ? gradedCalls.reduce(
+              (sum, gradedCall) => sum + gradedCall.gradePercentage,
               0
-            ) / gradedFiles.length
+            ) / gradedCalls.length
           : 0;
       return {
         ...dispatcher,
         overallGrade,
         latestDisplayCallDate: null,
+        gradedCalls,
       };
     }
   );
@@ -115,12 +126,8 @@ const DispatcherList = () => {
   const dateFilteredDispatchers: DispatcherWithMetrics[] =
     searchFilteredDispatchers
       .map((dispatcher) => {
-        const transcriptFiles = dispatcher.files?.transcriptFiles || [];
-        const grades = dispatcher.grades || {};
-        const gradedFiles = transcriptFiles.filter((file) => grades[file]);
-
-        const parsedDates = gradedFiles.map((filename) =>
-          parseCallDateFromFilename(filename)
+        const parsedDates = dispatcher.gradedCalls.map(
+          (gradedCall) => gradedCall.callDate
         );
         const knownDates = parsedDates.filter(
           (date): date is Date => date !== null
@@ -155,6 +162,30 @@ const DispatcherList = () => {
       .filter(
         (dispatcher): dispatcher is DispatcherWithMetrics => dispatcher !== null
       );
+
+  // Use call-level grades so the agency score reflects the actual reviewed workload.
+  const agencyGradedCalls = dispatchersWithGrades.flatMap((dispatcher) => {
+    if (!isDateRangeActive) {
+      return dispatcher.gradedCalls;
+    }
+
+    return dispatcher.gradedCalls.filter((gradedCall) => {
+      if (!gradedCall.callDate) {
+        return includeUnknownDate;
+      }
+
+      const afterFrom = fromBoundary ? gradedCall.callDate >= fromBoundary : true;
+      const beforeTo = toBoundary ? gradedCall.callDate <= toBoundary : true;
+      return afterFrom && beforeTo;
+    });
+  });
+  const agencyGrade =
+    agencyGradedCalls.length > 0
+      ? agencyGradedCalls.reduce(
+          (sum, gradedCall) => sum + gradedCall.gradePercentage,
+          0
+        ) / agencyGradedCalls.length
+      : null;
 
   const applyPresetRange = (days: number) => {
     const today = new Date();
@@ -314,6 +345,26 @@ const DispatcherList = () => {
           All Dispatchers
         </h2>
         <div className="mb-4 border border-gray-200 rounded-lg p-4 bg-gray-50">
+          <div className="mb-4">
+            <p className="text-sm font-medium text-gray-600">Agency Grade</p>
+            {agencyGrade !== null ? (
+              <>
+                <p className={`text-2xl font-bold ${gradeColor(agencyGrade)}`}>
+                  {agencyGrade.toFixed(1)}%
+                </p>
+                <p className="text-sm text-gray-500">
+                  Based on {agencyGradedCalls.length} graded call(s)
+                  {isDateRangeActive ? " in the selected date range." : "."}
+                </p>
+              </>
+            ) : (
+              <p className="text-sm text-gray-500">
+                {isDateRangeActive
+                  ? "No graded calls match the selected date range."
+                  : "No graded calls are available."}
+              </p>
+            )}
+          </div>
           <div className="flex flex-col sm:flex-row sm:items-end gap-3">
             <div className="flex flex-col">
               <label htmlFor="from-date" className="text-sm font-medium mb-1">
