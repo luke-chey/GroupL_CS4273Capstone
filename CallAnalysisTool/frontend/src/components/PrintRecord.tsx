@@ -1,7 +1,5 @@
 "use client";
 import React from "react";
-import { Dispatcher } from "@/types/dispatcher";
-
 
 
 interface TranscriptSegment {
@@ -26,11 +24,6 @@ export interface PrintCallRecord {
   transcriptData: TranscriptData | null;
 }
 
-interface PrintRecordProps {
-  records: PrintCallRecord[];
-  onClose: () => void;
-}
-
 
 
 const formatTime = (seconds: number): string => {
@@ -39,15 +32,12 @@ const formatTime = (seconds: number): string => {
   return `${m}:${s}`;
 };
 
-const getStatusStyle = (status: string): React.CSSProperties => {
+const getStatusColor = (status: string): string => {
   const s = status.trim().toLowerCase();
-  if (s === "asked correctly" || s === "obvious")
-    return { color: "#16a34a", fontWeight: 600 };
-  if (s === "not asked" || s === "asked incorrectly")
-    return { color: "#dc2626", fontWeight: 600 };
-  if (s === "not as scripted")
-    return { color: "#d97706", fontWeight: 600 };
-  return { color: "#6b7280", fontWeight: 500 };
+  if (s === "asked correctly" || s === "obvious") return "#16a34a";
+  if (s === "not asked" || s === "asked incorrectly") return "#dc2626";
+  if (s === "not as scripted") return "#d97706";
+  return "#6b7280";
 };
 
 const getGradeColor = (pct: number): string => {
@@ -58,320 +48,196 @@ const getGradeColor = (pct: number): string => {
 
 
 
-const CallSection = ({
-  record,
-  index,
-  total,
-}: {
-  record: PrintCallRecord;
-  index: number;
-  total: number;
-}) => {
-  const segments = record.transcriptData?.segments ?? [];
+const buildHtml = (records: PrintCallRecord[]): string => {
+  const callSections = records.map((record, index) => {
+    const segments = record.transcriptData?.segments ?? [];
 
-  return (
-    <div
-      style={{
-        pageBreakAfter: index < total - 1 ? "always" : "auto",
-        color: "#1a1a1a",
-        padding: "40px 48px",
-        maxWidth: "800px",
-        margin: "0 auto",
-      }}
-    >
-      {/* Header */}
-      <div
-        style={{
-          borderBottom: "3px solid #1e3a5f",
-          paddingBottom: "16px",
-          marginBottom: "28px",
-        }}
-      >
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+    const questionRows = Object.entries(record.questionGrades)
+      .map(([key, q]) => `
+        <tr style="background:${Object.keys(record.questionGrades).indexOf(key) % 2 === 0 ? "#fff" : "#f8fafc"}">
+          <td style="padding:7px 10px;border-bottom:1px solid #f1f5f9;color:#374151;font-size:13px">${q.label}</td>
+          <td style="padding:7px 10px;border-bottom:1px solid #f1f5f9;text-align:right;font-size:13px;font-weight:600;color:${getStatusColor(q.status)}">${q.status}</td>
+        </tr>
+      `).join("");
+
+    const transcriptLines = segments.map((seg) => {
+      const isDispatcher = seg.speaker !== "caller";
+      return `
+        <div style="display:flex;gap:12px;align-items:flex-start;margin-bottom:10px">
+          <span style="font-size:10px;color:#9ca3af;font-family:monospace;min-width:42px;padding-top:2px;flex-shrink:0">${formatTime(seg.start)}</span>
+          <div style="max-width:85%;${isDispatcher ? "" : "margin-left:auto"}">
+            <div style="font-size:10px;font-weight:700;margin-bottom:3px;color:${isDispatcher ? "#1e3a5f" : "#065f46"};text-transform:uppercase;letter-spacing:0.06em">${seg.speaker || "unknown"}</div>
+            <div style="padding:8px 12px;border-radius:8px;font-size:13px;line-height:1.5;background:${isDispatcher ? "#eff6ff" : "#f0fdf4"};border:1px solid ${isDispatcher ? "#bfdbfe" : "#bbf7d0"};color:#1a1a1a">${seg.text || ""}</div>
+          </div>
+        </div>
+      `;
+    }).join("");
+
+    const pageBreak = index < records.length - 1
+      ? 'style="page-break-after:always"'
+      : "";
+
+    return `
+      <div ${pageBreak}>
+        <!-- Header -->
+        <div style="border-bottom:3px solid #1e3a5f;padding-bottom:16px;margin-bottom:28px;display:flex;justify-content:space-between;align-items:flex-start">
           <div>
-            <p style={{ fontSize: "11px", letterSpacing: "0.12em", textTransform: "uppercase", color: "#6b7280", marginBottom: "4px" }}>
-              Emergency Medical Call Analysis
-            </p>
-            <h1 style={{ fontSize: "26px", fontWeight: 700, color: "#1e3a5f", margin: 0 }}>
-              Dispatcher Call Record
-            </h1>
+            <p style="font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:#6b7280;margin:0 0 4px 0">Emergency Medical Call Analysis</p>
+            <h1 style="font-size:26px;font-weight:700;color:#1e3a5f;margin:0">Dispatcher Call Record</h1>
           </div>
-          {total > 1 && (
-            <div style={{ fontSize: "12px", color: "#6b7280", textAlign: "right", marginTop: "8px" }}>
-              Call {index + 1} of {total}
-            </div>
-          )}
+          ${records.length > 1 ? `<div style="font-size:12px;color:#6b7280;margin-top:8px">Call ${index + 1} of ${records.length}</div>` : ""}
         </div>
-      </div>
 
-      {/* Call Info Grid */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr",
-          gap: "12px 32px",
-          marginBottom: "28px",
-          padding: "20px 24px",
-          backgroundColor: "#f8fafc",
-          borderRadius: "6px",
-          border: "1px solid #e2e8f0",
-        }}
-      >
-        <InfoRow label="Dispatcher" value={record.dispatcherName} />
-        <InfoRow
-          label="Grade"
-          value={`${record.gradePercentage.toFixed(1)}%`}
-          valueStyle={{ color: getGradeColor(record.gradePercentage), fontWeight: 700, fontSize: "18px" }}
-        />
-        <InfoRow
-          label="Date"
-          value={record.dateTime.toLocaleDateString("en-US", {
-            weekday: "long", year: "numeric", month: "long", day: "numeric",
-          })}
-        />
-        <InfoRow
-          label="Time"
-          value={record.dateTime.toLocaleTimeString("en-US", {
-            hour: "2-digit", minute: "2-digit", second: "2-digit",
-          })}
-        />
-        <InfoRow label="Nature Code" value={record.nature || "—"} />
-        {record.detectedNatureCode && (
-          <InfoRow label="Detected Nature" value={record.detectedNatureCode} />
-        )}
-        <InfoRow
-          label="File"
-          value={record.transcriptFilename}
-          valueStyle={{ fontSize: "11px", color: "#6b7280", fontFamily: "monospace" }}
-        />
-      </div>
-
-      {/* Question Grades */}
-      <section style={{ marginBottom: "28px" }}>
-        <h2 style={{
-          fontSize: "14px", fontWeight: 700, letterSpacing: "0.08em",
-          textTransform: "uppercase", color: "#1e3a5f", borderBottom: "1px solid #e2e8f0",
-          paddingBottom: "8px", marginBottom: "12px",
-        }}>
-          Grading Results
-        </h2>
-
-        {Object.keys(record.questionGrades).length === 0 ? (
-          <p style={{ color: "#9ca3af", fontStyle: "italic" }}>No grading data available.</p>
-        ) : (
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
-            <thead>
-              <tr style={{ backgroundColor: "#f1f5f9" }}>
-                <th style={{ textAlign: "left", padding: "8px 10px", fontWeight: 600, color: "#374151", borderBottom: "1px solid #e2e8f0" }}>
-                  Question
-                </th>
-                <th style={{ textAlign: "right", padding: "8px 10px", fontWeight: 600, color: "#374151", borderBottom: "1px solid #e2e8f0", whiteSpace: "nowrap" }}>
-                  Result
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {Object.entries(record.questionGrades).map(([key, q], i) => (
-                <tr key={key} style={{ backgroundColor: i % 2 === 0 ? "#fff" : "#f8fafc" }}>
-                  <td style={{ padding: "7px 10px", borderBottom: "1px solid #f1f5f9", color: "#374151" }}>
-                    {q.label}
-                  </td>
-                  <td style={{ padding: "7px 10px", borderBottom: "1px solid #f1f5f9", textAlign: "right", ...getStatusStyle(q.status) }}>
-                    {q.status}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </section>
-
-      {/* Full Transcript */}
-      <section>
-        <h2 style={{
-          fontSize: "14px", fontWeight: 700, letterSpacing: "0.08em",
-          textTransform: "uppercase", color: "#1e3a5f", borderBottom: "1px solid #e2e8f0",
-          paddingBottom: "8px", marginBottom: "16px",
-        }}>
-          Full Transcript
-        </h2>
-
-        {segments.length === 0 ? (
-          <p style={{ color: "#9ca3af", fontStyle: "italic" }}>No transcript available.</p>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-            {segments.map((seg, i) => {
-              const isDispatcher = seg.speaker !== "caller";
-              return (
-                <div
-                  key={i}
-                  style={{
-                    display: "flex",
-                    gap: "12px",
-                    alignItems: "flex-start",
-                  }}
-                >
-                  {/* Timestamp */}
-                  <span style={{
-                    fontSize: "10px", color: "#9ca3af", fontFamily: "monospace",
-                    minWidth: "42px", paddingTop: "2px", flexShrink: 0,
-                  }}>
-                    {formatTime(seg.start)}
-                  </span>
-
-                  {/* Speaker bubble */}
-                  <div style={{
-                    maxWidth: "85%",
-                    marginLeft: isDispatcher ? "0" : "auto",
-                  }}>
-                    <div style={{
-                      fontSize: "10px", fontWeight: 700, marginBottom: "3px",
-                      color: isDispatcher ? "#1e3a5f" : "#065f46",
-                      textTransform: "uppercase", letterSpacing: "0.06em",
-                    }}>
-                      {seg.speaker || "unknown"}
-                    </div>
-                    <div style={{
-                      padding: "8px 12px",
-                      borderRadius: "8px",
-                      fontSize: "13px",
-                      lineHeight: "1.5",
-                      backgroundColor: isDispatcher ? "#eff6ff" : "#f0fdf4",
-                      border: `1px solid ${isDispatcher ? "#bfdbfe" : "#bbf7d0"}`,
-                      color: "#1a1a1a",
-                    }}>
-                      {seg.text}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+        <!-- Info Grid -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px 32px;margin-bottom:28px;padding:20px 24px;background:#f8fafc;border-radius:6px;border:1px solid #e2e8f0">
+          <div>
+            <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:#9ca3af;margin-bottom:2px">Dispatcher</div>
+            <div style="font-size:14px;font-weight:600">${record.dispatcherName}</div>
           </div>
-        )}
-      </section>
+          <div>
+            <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:#9ca3af;margin-bottom:2px">Grade</div>
+            <div style="font-size:18px;font-weight:700;color:${getGradeColor(record.gradePercentage)}">${record.gradePercentage.toFixed(1)}%</div>
+          </div>
+          <div>
+            <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:#9ca3af;margin-bottom:2px">Date</div>
+            <div style="font-size:14px;font-weight:600">${record.dateTime.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}</div>
+          </div>
+          <div>
+            <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:#9ca3af;margin-bottom:2px">Time</div>
+            <div style="font-size:14px;font-weight:600">${record.dateTime.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</div>
+          </div>
+          <div>
+            <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:#9ca3af;margin-bottom:2px">Nature Code</div>
+            <div style="font-size:14px;font-weight:600">${record.nature || "—"}</div>
+          </div>
+          ${record.detectedNatureCode ? `
+          <div>
+            <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:#9ca3af;margin-bottom:2px">Detected Nature</div>
+            <div style="font-size:14px;font-weight:600">${record.detectedNatureCode}</div>
+          </div>` : ""}
+          <div style="grid-column:1/-1">
+            <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:#9ca3af;margin-bottom:2px">File</div>
+            <div style="font-size:11px;font-weight:600;font-family:monospace;color:#6b7280">${record.transcriptFilename}</div>
+          </div>
+        </div>
 
-      {/* Footer */}
-      <div style={{
-        marginTop: "40px", paddingTop: "12px",
-        borderTop: "1px solid #e2e8f0",
-        display: "flex", justifyContent: "space-between",
-        fontSize: "10px", color: "#9ca3af",
-      }}>
-        <span>Emergency Medical Call Analysis System</span>
-        <span>Printed {new Date().toLocaleString()}</span>
-      </div>
-    </div>
-  );
-};
-
-const InfoRow = ({
-  label,
-  value,
-  valueStyle,
-}: {
-  label: string;
-  value: string;
-  valueStyle?: React.CSSProperties;
-}) => (
-  <div>
-    <div style={{ fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.08em", color: "#9ca3af", marginBottom: "2px" }}>
-      {label}
-    </div>
-    <div style={{ fontSize: "14px", fontWeight: 600, color: "#1a1a1a", ...valueStyle }}>
-      {value}
-    </div>
-  </div>
-);
-
-
-const PrintRecord = ({ records, onClose }: PrintRecordProps) => {
-  const handlePrint = () => window.print();
-
-  return (
-    <>
-      {/* Screen UI: modal overlay with action bar */}
-      <div
-        className="print-modal-overlay"
-        style={{
-          position: "fixed", inset: 0, zIndex: 50,
-          backgroundColor: "rgba(0,0,0,0.5)",
-          display: "flex", flexDirection: "column",
-          alignItems: "center",
-          overflowY: "auto",
-          padding: "24px 0 48px",
-        }}
-      >
-        <style>{`
-          @media print {
-            body > * { display: none !important; }
-            .print-modal-overlay {
-              position: static !important;
-              background: none !important;
-              padding: 0 !important;
-              display: block !important;
-              overflow: visible !important;
-            }
-            .print-action-bar { display: none !important; }
-            .print-preview-wrapper {
-              box-shadow: none !important;
-              border-radius: 0 !important;
-              width: 100% !important;
-              max-width: 100% !important;
-            }
+        <!-- Grading Results -->
+        <div style="margin-bottom:28px">
+          <h2 style="font-size:14px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#1e3a5f;border-bottom:1px solid #e2e8f0;padding-bottom:8px;margin-bottom:12px">Grading Results</h2>
+          ${Object.keys(record.questionGrades).length === 0
+            ? `<p style="color:#9ca3af;font-style:italic">No grading data available.</p>`
+            : `<table style="width:100%;border-collapse:collapse">
+                <thead>
+                  <tr style="background:#f1f5f9">
+                    <th style="text-align:left;padding:8px 10px;font-weight:600;color:#374151;border-bottom:1px solid #e2e8f0;font-size:13px">Question</th>
+                    <th style="text-align:right;padding:8px 10px;font-weight:600;color:#374151;border-bottom:1px solid #e2e8f0;white-space:nowrap;font-size:13px">Result</th>
+                  </tr>
+                </thead>
+                <tbody>${questionRows}</tbody>
+              </table>`
           }
-        `}</style>
-        {/* Action bar */}
-        <div className="print-action-bar" style={{
-          display: "flex", gap: "12px", marginBottom: "20px",
-          backgroundColor: "#fff", padding: "12px 20px",
-          borderRadius: "8px", boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
-          alignItems: "center",
-        }}>
-          <span style={{ fontWeight: 600, color: "#1e3a5f", fontSize: "14px" }}>
-            {records.length === 1
-              ? "Print Record — 1 call"
-              : `Print Records — ${records.length} calls`}
-          </span>
-          <button
-            onClick={handlePrint}
-            style={{
-              backgroundColor: "#1e3a5f", color: "#fff",
-              border: "none", borderRadius: "6px",
-              padding: "8px 20px", fontWeight: 600,
-              cursor: "pointer", fontSize: "14px",
-            }}
-          >
-            Print / Save as PDF
-          </button>
-          <button
-            onClick={onClose}
-            style={{
-              backgroundColor: "#f1f5f9", color: "#374151",
-              border: "1px solid #e2e8f0", borderRadius: "6px",
-              padding: "8px 16px", fontWeight: 500,
-              cursor: "pointer", fontSize: "14px",
-            }}
-          >
-            Cancel
-          </button>
         </div>
 
-        {/* Preview */}
-        <div className="print-preview-wrapper" style={{
-          backgroundColor: "#fff",
-          boxShadow: "0 4px 24px rgba(0,0,0,0.12)",
-          width: "800px", maxWidth: "95vw",
-          borderRadius: "4px",
-        }}>
-          {records.map((record, i) => (
-            <CallSection key={i} record={record} index={i} total={records.length} />
-          ))}
+        <!-- Transcript -->
+        <div>
+          <h2 style="font-size:14px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#1e3a5f;border-bottom:1px solid #e2e8f0;padding-bottom:8px;margin-bottom:16px">Full Transcript</h2>
+          ${segments.length === 0
+            ? `<p style="color:#9ca3af;font-style:italic">No transcript available.</p>`
+            : transcriptLines
+          }
+        </div>
+
+        <!-- Footer -->
+        <div style="margin-top:40px;padding-top:12px;border-top:1px solid #e2e8f0;display:flex;justify-content:space-between;font-size:10px;color:#9ca3af">
+          <span>Emergency Medical Call Analysis System</span>
+          <span>Exported ${new Date().toLocaleString()}</span>
         </div>
       </div>
+    `;
+  }).join("");
 
-
-    </>
-  );
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dispatcher Call Record — ${records[0]?.dispatcherName ?? ""}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: #1a1a1a;
+      background: #f3f4f6;
+      padding: 32px 16px;
+    }
+    .page {
+      background: #fff;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 40px 48px;
+      border-radius: 6px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+    }
+    .toolbar {
+      max-width: 800px;
+      margin: 0 auto 20px;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    .btn-print {
+      background: #1e3a5f;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: 9px 20px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-close {
+      background: #f1f5f9;
+      color: #374151;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 9px 16px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    @media print {
+      body { background: #fff; padding: 0; }
+      .toolbar { display: none; }
+      .page { box-shadow: none; border-radius: 0; padding: 24px 32px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <strong style="color:#1e3a5f;font-size:14px">
+      ${records.length === 1 ? "1 call record" : `${records.length} call records`} — ${records[0]?.dispatcherName ?? ""}
+    </strong>
+    <button class="btn-print" onclick="window.print()">🖨 Print / Save as PDF</button>
+    <button class="btn-close" onclick="window.close()">Close</button>
+  </div>
+  <div class="page">
+    ${callSections}
+  </div>
+</body>
+</html>`;
 };
 
-export default PrintRecord;
+
+
+export const exportRecord = (records: PrintCallRecord[]): void => {
+  const html = buildHtml(records);
+  const blob = new Blob([html], { type: "text/html" });
+  const url = URL.createObjectURL(blob);
+  const tab = window.open(url, "_blank");
+  // Revoke the object URL after the tab has loaded
+  if (tab) {
+    tab.addEventListener("load", () => URL.revokeObjectURL(url), { once: true });
+  }
+};
+
+
+export default exportRecord;
