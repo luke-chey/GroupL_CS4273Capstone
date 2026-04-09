@@ -10,6 +10,7 @@ import {
   CardContent,
 } from "@/components/ui/card";
 import PlayerController, { PlayerControllerHandle } from "./PlayerController/PlayerController";
+import PrintRecord, { PrintCallRecord } from "./PrintRecord";
 
 /* =========================
   Types
@@ -200,6 +201,8 @@ const DispatcherDetails = ({
   const [transcriptSaveMessage, setTranscriptSaveMessage] = useState("");
   const [isTranscriptSaving, setIsTranscriptSaving] = useState(false);
   const playerControllerRef = useRef<PlayerControllerHandle | null>(null);
+  const [showPrint, setShowPrint] = useState(false);
+  const [printRecords, setPrintRecords] = useState<PrintCallRecord[]>([]);
 
   /* -------- Load localStorage -------- */
   const loadLocalData = () => {
@@ -325,6 +328,53 @@ const DispatcherDetails = ({
     }
   };
 
+
+  const buildPrintRecord = async (transcriptFilename: string): Promise<PrintCallRecord | null> => {
+  const grade = grades[transcriptFilename];
+  if (!grade) return null;
+
+  const fileParts = getFileParts(transcriptFilename);
+  const qGrades = grade.grades || grade.per_question || {};
+
+  let transcriptData = null;
+  try {
+    const { fetchBackendFile } = await import("@/lib/api");
+    transcriptData = await fetchBackendFile(transcriptFilename) as any;
+  } catch (e) {
+    console.warn("Could not load transcript for print:", transcriptFilename);
+  }
+
+  return {
+    transcriptFilename,
+    dispatcherName: activeDispatcher.name,
+    dateTime: fileParts.dateTime,
+    nature: fileParts.nature,
+    gradePercentage: grade.grade_percentage,
+    detectedNatureCode: grade.detected_nature_code,
+    questionGrades: qGrades,
+    transcriptData,
+  };
+};
+
+const handlePrintCurrent = async () => {
+  if (!currentTranscript) return;
+  const record = await buildPrintRecord(currentTranscript);
+  if (record) {
+    setPrintRecords([record]);
+    setShowPrint(true);
+  }
+};
+
+const handlePrintAll = async () => {
+  const allTranscripts = transcripts.filter((t) => grades[t]);
+  const records = (await Promise.all(allTranscripts.map(buildPrintRecord)))
+    .filter((r): r is PrintCallRecord => r !== null);
+  if (records.length) {
+    setPrintRecords(records);
+    setShowPrint(true);
+  }
+};
+
   /* =========================
      UI
   ========================= */
@@ -379,6 +429,24 @@ const DispatcherDetails = ({
             </button>
           </div>
         )}
+        {/* Print buttons */}
+        <div className="mt-4 flex items-center gap-3 print:hidden">
+          <button
+            onClick={handlePrintCurrent}
+            disabled={!currentTranscript || !currentGrade}
+            className={paginationButtonClassName}
+          >
+            Print This Call
+          </button>
+          {transcripts.filter((t) => grades[t]).length > 1 && (
+            <button
+              onClick={handlePrintAll}
+              className={paginationButtonClassName}
+            >
+              Print All Calls
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Main Grid */}
@@ -470,6 +538,12 @@ const DispatcherDetails = ({
         </Card>
 
       </div>
+        {showPrint && (
+    <PrintRecord
+      records={printRecords}
+      onClose={() => setShowPrint(false)}
+    />
+    )}
     </div>
   );
 };
