@@ -3,6 +3,7 @@ import React from "react";
 import { Dispatcher } from "@/types/dispatcher";
 
 
+
 interface TranscriptSegment {
   speaker?: string;
   text?: string;
@@ -56,6 +57,7 @@ const getGradeColor = (pct: number): string => {
 };
 
 
+
 const CallSection = ({
   record,
   index,
@@ -71,7 +73,6 @@ const CallSection = ({
     <div
       style={{
         pageBreakAfter: index < total - 1 ? "always" : "auto",
-        fontFamily: "'Georgia', 'Times New Roman', serif",
         color: "#1a1a1a",
         padding: "40px 48px",
         maxWidth: "800px",
@@ -283,7 +284,6 @@ const InfoRow = ({
 );
 
 
-
 const PrintRecord = ({ records, onClose }: PrintRecordProps) => {
   const handlePrint = () => window.print();
 
@@ -291,7 +291,7 @@ const PrintRecord = ({ records, onClose }: PrintRecordProps) => {
     <>
       {/* Screen UI: modal overlay with action bar */}
       <div
-        className="print:hidden"
+        className="print-modal-overlay"
         style={{
           position: "fixed", inset: 0, zIndex: 50,
           backgroundColor: "rgba(0,0,0,0.5)",
@@ -301,8 +301,27 @@ const PrintRecord = ({ records, onClose }: PrintRecordProps) => {
           padding: "24px 0 48px",
         }}
       >
+        <style>{`
+          @media print {
+            body > * { display: none !important; }
+            .print-modal-overlay {
+              position: static !important;
+              background: none !important;
+              padding: 0 !important;
+              display: block !important;
+              overflow: visible !important;
+            }
+            .print-action-bar { display: none !important; }
+            .print-preview-wrapper {
+              box-shadow: none !important;
+              border-radius: 0 !important;
+              width: 100% !important;
+              max-width: 100% !important;
+            }
+          }
+        `}</style>
         {/* Action bar */}
-        <div style={{
+        <div className="print-action-bar" style={{
           display: "flex", gap: "12px", marginBottom: "20px",
           backgroundColor: "#fff", padding: "12px 20px",
           borderRadius: "8px", boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
@@ -322,7 +341,7 @@ const PrintRecord = ({ records, onClose }: PrintRecordProps) => {
               cursor: "pointer", fontSize: "14px",
             }}
           >
-            🖨 Print / Save as PDF
+            Print / Save as PDF
           </button>
           <button
             onClick={onClose}
@@ -338,7 +357,7 @@ const PrintRecord = ({ records, onClose }: PrintRecordProps) => {
         </div>
 
         {/* Preview */}
-        <div style={{
+        <div className="print-preview-wrapper" style={{
           backgroundColor: "#fff",
           boxShadow: "0 4px 24px rgba(0,0,0,0.12)",
           width: "800px", maxWidth: "95vw",
@@ -350,12 +369,7 @@ const PrintRecord = ({ records, onClose }: PrintRecordProps) => {
         </div>
       </div>
 
-      {/* Print-only output, hides everything else */}
-      <div className="hidden print:block">
-        {records.map((record, i) => (
-          <CallSection key={i} record={record} index={i} total={records.length} />
-        ))}
-      </div>
+
     </>
   );
 };
