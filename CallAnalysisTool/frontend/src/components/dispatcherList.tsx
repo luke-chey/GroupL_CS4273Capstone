@@ -336,7 +336,7 @@ const DispatcherList = () => {
 
                 <div className="flex gap-2 md:pb-px">
                   <Button onClick={handleDateSearch} disabled={isLoading}>
-                    {isLoading ? "Loading..." : "Search"}
+                    {isLoading ? "Loading..." : "Date Search"}
                   </Button>
                   <Button
                     onClick={handleClearDateSearch}
