@@ -10,6 +10,7 @@ import {
   CardContent,
 } from "@/components/ui/card";
 import PlayerController, { PlayerControllerHandle } from "./PlayerController/PlayerController";
+import exportRecord, { PrintCallRecord } from "./PrintRecord";
 
 /* =========================
   Types
@@ -169,6 +170,9 @@ const getQuestionStatusClassName = (status?: string): string => {
 const paginationButtonClassName =
   "inline-flex items-center justify-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 enabled:cursor-pointer";
 
+const printButtonClassName =
+  "inline-flex items-center justify-center rounded-md border border-sky-300 bg-sky-100 px-4 py-2 text-sm font-medium text-sky-800 shadow-sm transition-colors hover:bg-sky-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 enabled:cursor-pointer";
+
 const formatDateRangePart = (dateValue?: string): string | null => {
   if (!dateValue) {
     return null;
@@ -200,6 +204,8 @@ const DispatcherDetails = ({
   const [transcriptSaveMessage, setTranscriptSaveMessage] = useState("");
   const [isTranscriptSaving, setIsTranscriptSaving] = useState(false);
   const playerControllerRef = useRef<PlayerControllerHandle | null>(null);
+  
+
 
   /* -------- Load localStorage -------- */
   const loadLocalData = () => {
@@ -325,6 +331,50 @@ const DispatcherDetails = ({
     }
   };
 
+
+  const buildPrintRecord = async (transcriptFilename: string): Promise<PrintCallRecord | null> => {
+  const grade = grades[transcriptFilename];
+  if (!grade) return null;
+
+  const fileParts = getFileParts(transcriptFilename);
+  const qGrades = grade.grades || grade.per_question || {};
+  const record = recordByTranscript.get(transcriptFilename);
+
+  let transcriptData = null;
+  try {
+    const { fetchBackendFile } = await import("@/lib/api");
+    transcriptData = await fetchBackendFile(transcriptFilename) as any;
+  } catch (e) {
+    console.warn("Could not load transcript for print:", transcriptFilename);
+  }
+
+  return {
+    transcriptFilename,
+    gradeFilename: record?.gradeFile,
+    audioFilename: record?.audioFile,
+    dispatcherName: activeDispatcher.name,
+    dateTime: fileParts.dateTime,
+    nature: fileParts.nature,
+    gradePercentage: grade.grade_percentage,
+    detectedNatureCode: grade.detected_nature_code,
+    questionGrades: qGrades,
+    transcriptData,
+  };
+};
+
+const handlePrintCurrent = async () => {
+  if (!currentTranscript) return;
+  const record = await buildPrintRecord(currentTranscript);
+  if (record) exportRecord([record]);
+};
+
+const handlePrintAll = async () => {
+  const allTranscripts = transcripts.filter((t) => grades[t]);
+  const printRecords = (await Promise.all(allTranscripts.map(buildPrintRecord)))
+    .filter((r): r is PrintCallRecord => r !== null);
+  if (printRecords.length) exportRecord(printRecords);
+};
+
   /* =========================
      UI
   ========================= */
@@ -351,19 +401,20 @@ const DispatcherDetails = ({
           Dispatcher ID: {activeDispatcher.id}
         </p>
 
-        {/* Pagination */}
-        {activePages.length > 1 && (
-          <div className="mt-4 flex items-center gap-3">
+        <div className="mt-4 flex items-center justify-between gap-4 print:hidden">
+          <div className="flex items-center gap-3">
             <button
               onClick={() => setCurrentIndex((i) => Math.max(i - 1, 0))}
               disabled={safeIndex === 0}
               className={paginationButtonClassName}
             >
-              Previous
+              Previous Call
             </button>
 
             <span>
-              {safeIndex + 1} / {activePages.length}
+              {activePages.length === 0
+                ? "0 / 0"
+                : `${safeIndex + 1} / ${activePages.length}`}
             </span>
 
             <button
@@ -375,10 +426,28 @@ const DispatcherDetails = ({
               disabled={safeIndex === activePages.length - 1}
               className={paginationButtonClassName}
             >
-              Next
+              Next Call
             </button>
           </div>
-        )}
+
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handlePrintCurrent}
+              disabled={!currentTranscript || !currentGrade}
+              className={printButtonClassName}
+            >
+              Print This Call
+            </button>
+            {transcripts.filter((t) => grades[t]).length > 1 && (
+              <button
+                onClick={handlePrintAll}
+                className={printButtonClassName}
+              >
+                Print All Calls
+              </button>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Main Grid */}
