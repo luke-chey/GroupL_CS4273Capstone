@@ -77,6 +77,20 @@ export default function DispatcherDetailPage() {
     }
   };
 
+  // This function allows the DispatcherDetails component to update the grades in the parent state when a grade is edited or added
+  const handleUpdateGrades = (filename: string, gradeData: any) => {
+    setDispatcher((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        grades: {
+          ...prev.grades,
+          [filename]: gradeData,
+        },
+      };
+    });
+  };
+
   useEffect(() => {
     const dispatcherName = params.name as string;
 
@@ -197,6 +211,7 @@ export default function DispatcherDetailPage() {
       savingTranscript={savingTranscript}
       saveMessage={saveMessage}
       onTranscriptFileChange={setCurrentTranscriptFilename}
+      onUpdateGrades={handleUpdateGrades}
     />
   );
 }

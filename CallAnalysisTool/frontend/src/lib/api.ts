@@ -240,6 +240,23 @@ export async function fetchGradeFile(filename: string): Promise<FileGrade> {
   return fetchJson<FileGrade>(`/api/files/${encodeURIComponent(filename)}`);
 }
 
+export async function updateGradeFile(filename: string, gradeData: FileGrade): Promise<{ message: string; file: string }> {
+  const response = await fetch(`${getApiBaseUrl()}/api/files/${encodeURIComponent(filename)}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(gradeData),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => response.statusText);
+    throw new Error(`API error (${response.status}): ${errorText || response.statusText}`);
+  }
+
+  return response.json();
+}
+
 export async function fetchBackendFile<T>(filename: string): Promise<T> {
   return fetchJson<T>(`/api/files/${encodeURIComponent(filename)}`);
 }

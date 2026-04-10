@@ -90,3 +90,59 @@ def serve_audio(relative_path):
     file_name = file_path.name
 
     return send_from_directory(str(file_dir), file_name)
+
+# might already have this functionality in another route, but this allows for direct updating of files by filename
+@files_bp.route('/files/<string:filename>', methods=['PUT'])
+def update_file(filename):
+    """
+    Update (overwrite) a file with new data.
+    """
+    try:
+        # Decode URI string
+        filename = unquote(filename)
+        base_dir = Path(OUTPUT_DIR)
+
+        # Split into parts
+        name_part, ext = filename.rsplit('.', 1)
+        parts = name_part.split('_')
+
+        if len(parts) < 4:
+            return jsonify({'error': 'Invalid filename format'}), 400
+
+        # Get info from parts
+        agent = parts[0]
+        date = parts[1]
+        time = parts[2]
+        nature = parts[3]
+
+        # Check that directory exists
+        record_dir = base_dir / agent / f"{date}_{time}_{nature}"
+        if not record_dir.exists() or not record_dir.is_dir():
+            return jsonify({'error': 'File directory not found'}), 404
+
+        # Check that file exists
+        file_path = record_dir / filename
+        if not file_path.exists():
+            return jsonify({'error': 'File not found'}), 404
+
+        try:
+            updated_data = request.get_json()
+
+            if not updated_data:
+                return jsonify({"error": "No JSON body provided"}), 400
+
+            with open(file_path, "w", encoding="utf-8") as f:
+                json.dump(updated_data, f, indent=2, ensure_ascii=False)
+
+            return jsonify({
+                "message": "File updated successfully",
+                "file": filename
+            }), 200
+
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
