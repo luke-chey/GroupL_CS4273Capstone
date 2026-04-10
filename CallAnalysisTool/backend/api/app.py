@@ -18,7 +18,7 @@ from api.routes.dispatchers import dispatchers_bp
 from api.routes.files import files_bp
 from api.routes.upload import upload_bp
 from api.services.whisperx_transcriber import initialize_transcriber
-from api.services.ai_grader import initialize_ollama, check_ollama_ready
+from api.services.ollama_handler import initialize_ollama, check_ollama_ready
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -26,7 +26,6 @@ def _env_flag(name: str, default: bool = False) -> bool:
     if value is None:
         return default
     return value.lower() in ("true", "1", "yes", "on")
-
 
 def create_app():
     """Application factory pattern"""

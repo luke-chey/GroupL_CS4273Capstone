@@ -8,14 +8,11 @@ from pathlib import Path
 
 # Third-party
 from flask import Blueprint, request, jsonify
-from pathvalidate import sanitize_filepath
+from pathvalidate import sanitize_filepath, sanitize_filename
 
 # Local modules
-from api.services.ai_grader import (
-    detect_nature_codes_in_memory,
-    grade_transcript_file,
-    identify_nature_code,
-)
+from api.services.ai_grader import grade_transcript_file
+from api.services.nature_codes import detect_nature_code
 from api.services.speaker_separation import speaker_separation
 from api.services.text_handler import extract_info_from_cdr, json_to_text
 from api.services.whisperx_transcriber import get_transcriber
@@ -60,11 +57,12 @@ def upload():
             if file_extension == '.zip':
                 is_zip = True
 
-        # Do all processing in temp dir
+        # Set defaults
         date = time = agent_name = (None,) * 3
         cdr_path = audio_path = transcript_path = grades_path = nature_code = (None,) * 5
         transcript_data = None
 
+        # Do all processing in temp dir
         temp_dir = OUTPUT_DIR / "_tmp" / str(uuid.uuid4().hex)
         temp_dir.mkdir(parents=True, exist_ok=True)
         TEMP_PATH = Path(temp_dir)
@@ -137,22 +135,13 @@ def upload():
             print("Both is_zip and is_json False")
             return jsonify({'error': 'No file or json provided'}), 400
         
-        # Get nature code
         # Convert JSON to text format
-        transcript_text = json_to_text(transcript_path)
+        transcript_text = json_to_text(file_path=transcript_path)
         
-        # Detect nature codes with sentence transformer
-        print("Detecting possible nature codes using sentence transformer")
-        nature_codes_text = detect_nature_codes_in_memory(transcript_path)
-        
-        # Get final nature code using AI
-        print("Getting final nature code using AI")
-        nature_code = identify_nature_code(nature_codes_text, transcript_text)
-        if nature_code is not None:
-            print(f"Final nature code: {nature_code}")
-        else:
-            print("Nature code not found")
-            raise RuntimeError("Nature code could not be detected")
+        # Detect nature code
+        print("Detecting nature code with AI")
+        nature_code = detect_nature_code(transcript_path)
+        print("Detected nature code: ", nature_code)
         
         # Get grades
         response, grades_path = grade_transcript_file(nature_code, transcript_path, TEMP_PATH)
@@ -161,13 +150,20 @@ def upload():
         # Base output directory
         base_dir = Path(OUTPUT_DIR)
 
-        # Create folder: output/{agent_name}/{date}_{time}_{nature_code}/
-        dest_dir = base_dir / agent_name / f"{date}_{time}_{nature_code}"
-        dest_dir = sanitize_filepath(dest_dir, replacement_text="-")
+        # Sanitize directory components (not full path yet)
+        safe_agent = sanitize_filename(agent_name, replacement_text="-")
+        safe_folder = sanitize_filename(f"{date}_{time}_{nature_code}", replacement_text="-")
+
+        # Build and sanitize full directory path
+        dest_dir = sanitize_filepath(base_dir / safe_agent / safe_folder, replacement_text="-")
+        dest_dir = Path(dest_dir)
         dest_dir.mkdir(parents=True, exist_ok=True)
 
-        # Build base filename prefix
-        base_name = f"{agent_name}_{date}_{time}_{nature_code}"
+        # Build base filename safely
+        base_name = sanitize_filename(
+            f"{agent_name}_{date}_{time}_{nature_code}",
+            replacement_text="-"
+        )
 
         # Source paths
         cdr_src = Path(cdr_path)
@@ -175,18 +171,17 @@ def upload():
         transcript_src = Path(transcript_path)
         grades_src = Path(grades_path)
 
-        # Destination paths (preserve correct extensions and sanitize)
-        cdr_dst = dest_dir / f"{base_name}_cdr{cdr_src.suffix}"
-        cdr_dst = sanitize_filepath(cdr_dst, replacement_text="-")
+        # Destination filenames (sanitize ONLY filename part)
+        cdr_name = sanitize_filename(f"{base_name}_cdr{cdr_src.suffix}", replacement_text="-")
+        audio_name = sanitize_filename(f"{base_name}_audio{audio_src.suffix}", replacement_text="-")
+        transcript_name = sanitize_filename(f"{base_name}_transcript{transcript_src.suffix}", replacement_text="-")
+        grades_name = sanitize_filename(f"{base_name}_grades{grades_src.suffix}", replacement_text="-")
 
-        audio_dst = dest_dir / f"{base_name}_audio{audio_src.suffix}"
-        audio_dst = sanitize_filepath(audio_dst, replacement_text="-")
-
-        transcript_dst = dest_dir / f"{base_name}_transcript{transcript_src.suffix}"
-        transcript_dst = sanitize_filepath(transcript_dst, replacement_text="-")
-
-        grades_dst = dest_dir / f"{base_name}_grades{grades_src.suffix}"
-        grades_dst = sanitize_filepath(grades_dst, replacement_text="-")
+        # Combine with directory
+        cdr_dst = dest_dir / cdr_name
+        audio_dst = dest_dir / audio_name
+        transcript_dst = dest_dir / transcript_name
+        grades_dst = dest_dir / grades_name
 
         # Source/dest dict
         source_dest_dict = {

@@ -25,7 +25,7 @@ def serve_audio(relative_path):
     """
     Serve audio files from the output directory.
     """
-    print(f"Serving audio file: {relative_path}")
+    #print(f"Serving audio file: {relative_path}")
 
     output_dir = OUTPUT_DIR.resolve()
     file_path = output_dir / relative_path
@@ -53,7 +53,7 @@ def get_file(filename):
         # Split into parts
         filename, name_part, ext, parts = decode_filename_parts(filename)
 
-        print(f"Serving file:\nDecoded: {filename}\nParts: {parts}")
+        #print(f"Serving file:\nDecoded: {filename}\nParts: {parts}")
 
         if len(parts) < 4:
             return jsonify({'error': 'Invalid filename format'}), 400
@@ -109,7 +109,7 @@ def put_file(filename):
         # Split into parts
         filename, name_part, ext, parts = decode_filename_parts(filename)
 
-        print(f"Updating file:\nDecoded: {filename}\nParts: {parts}")
+        #print(f"Updating file:\nDecoded: {filename}\nParts: {parts}")
 
         if len(parts) < 5:
             return jsonify({'error': 'Invalid filename format'}), 400
