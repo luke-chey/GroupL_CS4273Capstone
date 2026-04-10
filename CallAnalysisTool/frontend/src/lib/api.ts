@@ -105,6 +105,17 @@ export async function uploadTranscriptForAnalysis(
   });
 }
 
+export async function regradeFile(
+  grades: FileGrade,
+  transcript: string
+): Promise<UploadPipelineResponse> {
+  const formData = new FormData();
+  formData.append("grades", JSON.stringify(grades));
+  formData.append("transcript", transcript);
+
+  return postRegradeRequest(formData);
+}
+
 async function postUploadRequest(
   body: BodyInit,
   headers?: HeadersInit
@@ -113,6 +124,51 @@ async function postUploadRequest(
 
   try {
     const response = await fetch(`${apiBaseUrl}/api/upload`, {
+      method: "POST",
+      headers,
+      body,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => response.statusText);
+      throw new Error(
+        `API error (${response.status}): ${errorText || response.statusText}`
+      );
+    }
+
+    // Handle different response types
+    const data = await response.json();
+
+    // If the response is a string, try to parse it
+    if (typeof data === "string") {
+      try {
+        return JSON.parse(data);
+      } catch {
+        throw new Error("Invalid response format from API");
+      }
+    }
+
+    return data;
+  } catch (error) {
+    // Handle network errors specifically
+    if (error instanceof TypeError && error.message.includes("fetch")) {
+      throw new Error(
+        `Failed to connect to API at ${apiBaseUrl}. Make sure the backend server is running on port ${API_PORT}.`
+      );
+    }
+    // Re-throw other errors
+    throw error;
+  }
+}
+
+async function postRegradeRequest(
+  body: BodyInit,
+  headers?: HeadersInit
+): Promise<UploadPipelineResponse> {
+  const apiBaseUrl = getApiBaseUrl();
+
+  try {
+    const response = await fetch(`${apiBaseUrl}/api/regrade`, {
       method: "POST",
       headers,
       body,

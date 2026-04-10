@@ -31,12 +31,12 @@ def regrade():
     try:
         print("Regrade endpoint called")
 
-        if 'grades' in request.files:
+        if 'grades' not in request.files:
             print("Grades detected")
         else:
             return jsonify({'error': 'No grades provided'}), 400
         
-        if 'transcript' in request.files:
+        if 'transcript' not in request.files:
             print("Transcript detected")
         else:
             return jsonify({'error': 'No transcript provided'}), 400
@@ -50,8 +50,8 @@ def regrade():
         temp_dir.mkdir(parents=True, exist_ok=True)
         TEMP_PATH = Path(temp_dir)
 
-        grades = request.files['grades']
-        transcript = request.files['transcript']
+        grades = request.files.get('grades')
+        transcript = request.files.get('transcript')
 
         new_nature_code = grades['detected_nature_code']
         response, grades_path = grade_transcript_file(new_nature_code, transcript, TEMP_PATH)

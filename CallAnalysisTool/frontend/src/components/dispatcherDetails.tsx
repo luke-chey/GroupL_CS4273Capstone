@@ -1,7 +1,7 @@
 "use client";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Dispatcher, DispatcherRecord, FileParts } from "@/types/dispatcher";
+import { Dispatcher, DispatcherRecord, FileGrade, FileParts } from "@/types/dispatcher";
 import {
   Card,
   CardHeader,
@@ -10,6 +10,8 @@ import {
   CardContent,
 } from "@/components/ui/card";
 import PlayerController, { PlayerControllerHandle } from "./PlayerController/PlayerController";
+import { fetchBackendFile, regradeFile } from "@/lib/api";
+import ProgressModal from "./ProgressModal";
 
 /* =========================
   Types
@@ -200,6 +202,45 @@ const DispatcherDetails = ({
   const [transcriptSaveMessage, setTranscriptSaveMessage] = useState("");
   const [isTranscriptSaving, setIsTranscriptSaving] = useState(false);
   const playerControllerRef = useRef<PlayerControllerHandle | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<string>("");
+  const [progressPercentage, setProgressPercentage] = useState<number>(0);
+  const [showProgressModal, setShowProgressModal] = useState<boolean>(false);
+  const [totalStartTime, setTotalStartTime] = useState<number | null>(null);
+  const [elapsedNow, setElapsedNow] = useState<number>(Date.now());
+  const [isRegrading, setIsRegrading] = useState(false);
+
+  useEffect(() => {
+    if (!isRegrading) return;
+
+    const intervalId = window.setInterval(() => {
+      setElapsedNow(Date.now());
+    }, 1000);
+
+    return () => window.clearInterval(intervalId);
+  }, [isRegrading]);
+
+  const formatElapsedTime = (ms: number | null) => {
+    if (!ms || ms < 0) return "00:00";
+
+    const totalSeconds = Math.floor(ms / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+
+    if (hours > 0) {
+      return `${hours}:${minutes.toString().padStart(2, "0")}:${seconds
+        .toString()
+        .padStart(2, "0")}`;
+    }
+
+    return `${minutes.toString().padStart(2, "0")}:${seconds
+      .toString()
+      .padStart(2, "0")}`;
+  };
+
+  const totalElapsedTime = formatElapsedTime(
+    totalStartTime ? elapsedNow - totalStartTime : null
+  );
 
   /* -------- Load localStorage -------- */
   const loadLocalData = () => {
@@ -299,6 +340,35 @@ const DispatcherDetails = ({
     ? `/records?${backQuery.toString()}`
     : "/records";
 
+  const handleRegradeButtonClick = async (
+    grades: FileGrade,
+    transcript: string
+  ) => {
+    setIsRegrading(true);
+    setShowProgressModal(true);
+    setProgressPercentage(0);
+    setUploadProgress("Processing files...");
+    const startedAt = Date.now();
+    setElapsedNow(startedAt);
+    setTotalStartTime(startedAt);
+
+    try {
+      const response = await regradeFile(grades, transcript);
+    } catch (error) {
+      console.error("Regrade error:", error);
+      alert(
+        `Error regrading dispatcher: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
+      );
+      setShowProgressModal(false);
+    } finally {
+      setIsRegrading(false);
+      setUploadProgress("");
+      setTotalStartTime(null);
+    }
+  }
+
   const handleEditButtonClick = async () => {
     if (!isEditingTranscript) {
       setTranscriptSaveMessage("");
@@ -394,9 +464,26 @@ const DispatcherDetails = ({
           <CardContent>
             {currentGrade ? (
               <div className="space-y-2">
-                <p className="text-blue-600">
-                  {currentGrade.grade_percentage}%
-                </p>
+                <div className="mb-4 flex justify-between">
+                  <p className="text-blue-600">
+                    {currentGrade.grade_percentage}%
+                  </p>
+
+                  <button
+                    type="button"
+                    onClick={() => fetchBackendFile<string>(currentTranscript)
+                      .then((transcript) => {
+                        handleRegradeButtonClick(currentGrade, JSON.stringify(transcript))
+                      })
+                      .catch((error) => {
+                        console.error("Error loading transcription:", error);
+                      })
+                    }
+                    className={paginationButtonClassName}
+                  >
+                    Regrade
+                  </button>
+                </div>
 
                 {Object.entries(questionGrades).map(
                   ([k, q]) => (
@@ -470,6 +557,14 @@ const DispatcherDetails = ({
         </Card>
 
       </div>
+      <ProgressModal
+        oneFile={true}
+        isOpen={isRegrading}
+        progress={progressPercentage}
+        currentStep={uploadProgress}
+        elapsedTime={totalElapsedTime}
+        currentFileElapsedTime={totalElapsedTime}
+      />
     </div>
   );
 };
