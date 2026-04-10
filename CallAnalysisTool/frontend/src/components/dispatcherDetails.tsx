@@ -471,6 +471,11 @@ const DispatcherDetails = ({
   }, [currentGrade, currentTranscript]);
 
   useEffect(() => {
+    setGradeSaveMessage("");
+    setTranscriptSaveMessage("");
+  }, [currentTranscript]);
+
+  useEffect(() => {
     setOverallGradeOverride(null);
   }, [activeDispatcher.id]);
 
