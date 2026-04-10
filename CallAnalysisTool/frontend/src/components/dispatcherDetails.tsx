@@ -10,7 +10,7 @@ import {
   CardContent,
 } from "@/components/ui/card";
 import PlayerController, { PlayerControllerHandle } from "./PlayerController/PlayerController";
-import PrintRecord, { PrintCallRecord } from "./PrintRecord";
+import exportRecord, { PrintCallRecord } from "./PrintRecord";
 
 /* =========================
   Types
@@ -201,8 +201,8 @@ const DispatcherDetails = ({
   const [transcriptSaveMessage, setTranscriptSaveMessage] = useState("");
   const [isTranscriptSaving, setIsTranscriptSaving] = useState(false);
   const playerControllerRef = useRef<PlayerControllerHandle | null>(null);
-  const [showPrint, setShowPrint] = useState(false);
-  const [printRecords, setPrintRecords] = useState<PrintCallRecord[]>([]);
+  
+
 
   /* -------- Load localStorage -------- */
   const loadLocalData = () => {
@@ -359,20 +359,14 @@ const DispatcherDetails = ({
 const handlePrintCurrent = async () => {
   if (!currentTranscript) return;
   const record = await buildPrintRecord(currentTranscript);
-  if (record) {
-    setPrintRecords([record]);
-    setShowPrint(true);
-  }
+  if (record) exportRecord([record]);
 };
 
 const handlePrintAll = async () => {
   const allTranscripts = transcripts.filter((t) => grades[t]);
-  const records = (await Promise.all(allTranscripts.map(buildPrintRecord)))
+  const printRecords = (await Promise.all(allTranscripts.map(buildPrintRecord)))
     .filter((r): r is PrintCallRecord => r !== null);
-  if (records.length) {
-    setPrintRecords(records);
-    setShowPrint(true);
-  }
+  if (printRecords.length) exportRecord(printRecords);
 };
 
   /* =========================
@@ -538,12 +532,6 @@ const handlePrintAll = async () => {
         </Card>
 
       </div>
-        {showPrint && (
-    <PrintRecord
-      records={printRecords}
-      onClose={() => setShowPrint(false)}
-    />
-    )}
     </div>
   );
 };
