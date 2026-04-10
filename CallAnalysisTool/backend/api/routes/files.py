@@ -1,8 +1,11 @@
 import json
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import unquote
 
 from flask import Blueprint, jsonify, request, send_from_directory
+from api.services.ai_grader import calculate_final_grade
+from api.services.nature_codes import load_nature_code_questions
 
 files_bp = Blueprint('files', __name__)
 
@@ -140,8 +143,53 @@ def put_file(filename):
         if replacement_payload is None:
             return jsonify({'error': 'Invalid JSON body'}), 400
         
-        if "segments" not in replacement_payload:
+        if description == "transcript" and "segments" not in replacement_payload:
             return jsonify({"error": "Transcript must include 'segments'"}), 400
+
+        if description == "grades" and not any(
+            key in replacement_payload for key in ("grades", "per_question")
+        ):
+            return jsonify({"error": "Grades file must include 'grades' or 'per_question'"}), 400
+
+        if description == "grades":
+            print(f"Original grade: {replacement_payload.get("grade_percentage")}")
+
+            grades_payload = replacement_payload.get("grades") or replacement_payload.get("per_question") or {}
+            nature_code = replacement_payload.get("detected_nature_code")
+
+            if not nature_code:
+                return jsonify({"error": "Grades file must include 'detected_nature_code'"}), 400
+
+            questions_dict = load_nature_code_questions(nature_code)
+            if not questions_dict:
+                return jsonify({"error": f"Could not load questions for nature code '{nature_code}'"}), 400
+
+            grade_codes = {
+                qid: str((grade_data or {}).get("code", "2"))
+                for qid, grade_data in grades_payload.items()
+            }
+
+            percentage = round(calculate_final_grade(grade_codes, questions_dict), 1)
+            print(f"New grade: {percentage}")
+            total_questions = len(grades_payload)
+            case_entry_count = sum(1 for qid in grades_payload if qid.startswith("CE_"))
+            nature_code_count = sum(1 for qid in grades_payload if qid.startswith("NC_"))
+            questions_asked_correctly = sum(
+                1 for grade_data in grades_payload.values()
+                if (grade_data or {}).get("code") in {"1", "6"}
+            )
+            questions_missed = total_questions - questions_asked_correctly
+
+            replacement_payload["grades"] = grades_payload
+            if "per_question" in replacement_payload:
+                replacement_payload["per_question"] = grades_payload
+            replacement_payload["grade_percentage"] = percentage
+            replacement_payload["total_questions"] = total_questions
+            replacement_payload["case_entry_questions"] = case_entry_count
+            replacement_payload["nature_code_questions"] = nature_code_count
+            replacement_payload["questions_asked_correctly"] = questions_asked_correctly
+            replacement_payload["questions_missed"] = questions_missed
+            replacement_payload["timestamp"] = datetime.now().isoformat() + "Z"
         
         with open(file_path, "w", encoding="utf-8") as f:
             json.dump(replacement_payload, f, indent=2, ensure_ascii=False)
@@ -149,6 +197,7 @@ def put_file(filename):
         return jsonify({
             'message': 'File updated successfully',
             'filename': filename,
+            'new_grade': replacement_payload.get('grade_percentage'),
         }), 200
 
     except Exception as e:

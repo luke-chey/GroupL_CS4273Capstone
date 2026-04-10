@@ -11,6 +11,8 @@ import {
 } from "@/components/ui/card";
 import PlayerController, { PlayerControllerHandle } from "./PlayerController/PlayerController";
 import exportRecord, { PrintCallRecord } from "./PrintRecord";
+import { protocols } from "./ProtocolBook";
+import { putBackendFile } from "@/lib/api";
 
 /* =========================
   Types
@@ -167,6 +169,16 @@ const getQuestionStatusClassName = (status?: string): string => {
   }
 };
 
+const GRADE_KEY: Record<string, string> = {
+  "1": "Asked Correctly",
+  "2": "Not Asked",
+  "3": "Asked Incorrectly",
+  "4": "Not As Scripted",
+  "5": "N/A",
+  "6": "Obvious",
+  RC: "Recorded Correctly",
+};
+
 const paginationButtonClassName =
   "inline-flex items-center justify-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 enabled:cursor-pointer";
 
@@ -200,6 +212,12 @@ const DispatcherDetails = ({
   const [dispatchers, setDispatchers] = useState<Dispatcher[]>([]);
   const [batchPages, setBatchPages] = useState<BatchPage[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [gradeOverrides, setGradeOverrides] = useState<Record<string, any>>({});
+  const [overallGradeOverride, setOverallGradeOverride] = useState<number | null>(null);
+  const [isEditingGrades, setIsEditingGrades] = useState(false);
+  const [gradeData, setGradeData] = useState<any>(null);
+  const [gradeSaveMessage, setGradeSaveMessage] = useState("");
+  const [isGradeSaving, setIsGradeSaving] = useState(false);
   const [isEditingTranscript, setIsEditingTranscript] = useState(false);
   const [transcriptSaveMessage, setTranscriptSaveMessage] = useState("");
   const [isTranscriptSaving, setIsTranscriptSaving] = useState(false);
@@ -265,6 +283,10 @@ const DispatcherDetails = ({
   const records = activeDispatcher.records || [];
   const transcripts = activeDispatcher.files?.transcriptFiles || [];
   const grades = activeDispatcher.grades || {};
+  const effectiveGrades = {
+    ...grades,
+    ...gradeOverrides,
+  };
   const recordByTranscript = new Map<string, DispatcherRecord>(
     records
       .filter((record): record is DispatcherRecord & { transcriptFile: string } =>
@@ -275,16 +297,25 @@ const DispatcherDetails = ({
 
   const currentTranscript = currentPage?.transcriptFilename;
   const currentGrade = currentTranscript
-    ? grades[currentTranscript]
+    ? effectiveGrades[currentTranscript]
     : undefined;
   const questionGrades = currentGrade?.grades || currentGrade?.per_question || {};
+  const detectedNatureCodeValue =
+    gradeData?.detected_nature_code ?? currentGrade?.detected_nature_code ?? "";
+  const natureCodeOptions = protocols.filter((protocol) => protocol.id !== "0");
+  const hasDetectedNatureCodeOption = natureCodeOptions.some(
+    (protocol) =>
+      protocol.title === detectedNatureCodeValue ||
+      protocol.id === detectedNatureCodeValue
+  );
 
   const currentRecord = currentTranscript
     ? recordByTranscript.get(currentTranscript)
     : undefined;
   const matchedAudio = currentRecord?.audioFile;
 
-  const overallGrade = calculateOverallGrade(transcripts, grades);
+  const computedOverallGrade = calculateOverallGrade(transcripts, effectiveGrades);
+  const overallGrade = overallGradeOverride ?? computedOverallGrade;
   const formattedStartDate = formatDateRangePart(startDate);
   const formattedEndDate = formatDateRangePart(endDate);
   const headerTitle =
@@ -331,6 +362,203 @@ const DispatcherDetails = ({
     }
   };
 
+  const handleGradesEditButtonClick = async () => {
+    if (!isEditingGrades) {
+      setGradeSaveMessage("");
+      setIsEditingGrades(true);
+      return;
+    }
+
+    if (!currentTranscript || !currentGrade || !gradeData) {
+      return;
+    }
+
+    const gradeFilename =
+      currentRecord?.gradeFile ||
+      currentTranscript.replace(/_transcript\.json$/i, "_grades.json");
+    const nextQuestions = gradeData.grades || questionGrades;
+    const replacementPayload = {
+      ...currentGrade,
+      ...gradeData,
+      grades: nextQuestions,
+      ...(currentGrade?.per_question ? { per_question: nextQuestions } : {}),
+    };
+
+    setIsGradeSaving(true);
+    setGradeSaveMessage("");
+
+    try {
+      const response = await putBackendFile<{ new_grade?: number }>(
+        gradeFilename,
+        replacementPayload
+      );
+      const savedGradePercentage =
+        response.new_grade ?? replacementPayload.grade_percentage;
+      const gradedFilesCount = transcripts.filter(
+        (transcriptFilename) => effectiveGrades[transcriptFilename]
+      ).length;
+      const previousOverallGrade = overallGrade ?? 0;
+      const previousCurrentGrade = Number(currentGrade.grade_percentage || 0);
+      const nextOverallGrade =
+        gradedFilesCount <= 1
+          ? savedGradePercentage
+          : (
+              (previousOverallGrade * gradedFilesCount -
+                previousCurrentGrade +
+                savedGradePercentage) /
+              gradedFilesCount
+            );
+      const savedPayload = {
+        ...replacementPayload,
+        grade_percentage: savedGradePercentage,
+      };
+      setGradeOverrides((previous) => ({
+        ...previous,
+        [currentTranscript]: savedPayload,
+      }));
+
+      const storedDispatchers = parseStoredDispatchers(
+        localStorage.getItem("dispatchers")
+      ).map((storedDispatcher) => {
+        if (storedDispatcher.id !== activeDispatcher.id) {
+          return storedDispatcher;
+        }
+
+        return {
+          ...storedDispatcher,
+          grades: {
+            ...(storedDispatcher.grades || {}),
+            [currentTranscript]: savedPayload,
+          },
+        };
+      });
+
+      localStorage.setItem("dispatchers", JSON.stringify(storedDispatchers));
+      setDispatchers(storedDispatchers);
+      setOverallGradeOverride(nextOverallGrade);
+      setGradeData((previous: any) =>
+        previous
+          ? { ...previous, grade_percentage: savedGradePercentage }
+          : previous
+      );
+      setGradeSaveMessage("Grades saved.");
+      setIsEditingGrades(false);
+    } catch (error) {
+      console.error("Error saving grades:", error);
+      setGradeSaveMessage("Failed to save grades.");
+    } finally {
+      setIsGradeSaving(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!currentGrade) {
+      setGradeData(null);
+      setIsEditingGrades(false);
+      return;
+    }
+
+    setGradeData({
+      grade_percentage: currentGrade.grade_percentage,
+      detected_nature_code: currentGrade.detected_nature_code || "",
+      grades: Object.fromEntries(
+        Object.entries(questionGrades).map(([key, question]: [string, any]) => [
+          key,
+          { ...question },
+        ])
+      ),
+    });
+  }, [currentGrade, currentTranscript]);
+
+  useEffect(() => {
+    setOverallGradeOverride(null);
+  }, [activeDispatcher.id]);
+
+  const handleGradeChange = (field: string, value: string | number) => {
+    setGradeData((previous: any) => {
+      if (!previous) {
+        return previous;
+      }
+
+      if (field === "grade_percentage") {
+        return { ...previous, grade_percentage: value };
+      }
+
+      if (field === "detected_nature_code") {
+        return { ...previous, detected_nature_code: value };
+      }
+
+      if (field.startsWith("question_")) {
+        const questionId = field.replace("question_", "");
+        const nextGrades = { ...(previous.grades || {}) };
+        const gradeCode = String(value);
+
+        if (nextGrades[questionId]) {
+          nextGrades[questionId] = {
+            ...nextGrades[questionId],
+            code: gradeCode,
+            status: GRADE_KEY[gradeCode] || nextGrades[questionId].status,
+          };
+        }
+
+        return { ...previous, grades: nextGrades };
+      }
+
+      return previous;
+    });
+  };
+
+  const handleQuestionLabelChange = (questionId: string, value: string) => {
+    setGradeData((previous: any) => {
+      if (!previous) {
+        return previous;
+      }
+
+      const nextGrades = { ...(previous.grades || {}) };
+      if (nextGrades[questionId]) {
+        nextGrades[questionId] = {
+          ...nextGrades[questionId],
+          label: value,
+        };
+      }
+
+      return { ...previous, grades: nextGrades };
+    });
+  };
+
+  const handleAddQuestion = () => {
+    setGradeData((previous: any) => {
+      if (!previous) {
+        return previous;
+      }
+
+      const questionId = `custom_${Date.now()}`;
+      return {
+        ...previous,
+        grades: {
+          ...(previous.grades || {}),
+          [questionId]: {
+            code: "2",
+            label: "New Question",
+            status: "Not Asked",
+          },
+        },
+      };
+    });
+  };
+
+  const handleDeleteQuestion = (questionId: string) => {
+    setGradeData((previous: any) => {
+      if (!previous) {
+        return previous;
+      }
+
+      const nextGrades = { ...(previous.grades || {}) };
+      delete nextGrades[questionId];
+      return { ...previous, grades: nextGrades };
+    });
+  };
+
 
   const buildPrintRecord = async (transcriptFilename: string): Promise<PrintCallRecord | null> => {
   const grade = grades[transcriptFilename];
@@ -369,7 +597,7 @@ const handlePrintCurrent = async () => {
 };
 
 const handlePrintAll = async () => {
-  const allTranscripts = transcripts.filter((t) => grades[t]);
+  const allTranscripts = transcripts.filter((t) => effectiveGrades[t]);
   const printRecords = (await Promise.all(allTranscripts.map(buildPrintRecord)))
     .filter((r): r is PrintCallRecord => r !== null);
   if (printRecords.length) exportRecord(printRecords);
@@ -454,28 +682,159 @@ const handlePrintAll = async () => {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
         {/* Transcript */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Question Grades</CardTitle>
-            Nature Code: {getFileParts(currentTranscript).nature}
-            <CardDescription>{currentTranscript}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {currentGrade ? (
-              <div className="space-y-2">
-                <p className="text-blue-600">
-                  {currentGrade.grade_percentage}%
+        <Card className="flex h-full flex-col">
+          <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
+            <div className="min-w-0">
+              <CardTitle>Question Grades</CardTitle>
+              <div>Nature Code: {getFileParts(currentTranscript).nature}</div>
+              <CardDescription>{currentTranscript}</CardDescription>
+            </div>
+            <div className="flex flex-col items-end gap-2">
+              <button
+                type="button"
+                onClick={handleGradesEditButtonClick}
+                disabled={!currentGrade || isGradeSaving}
+                className={paginationButtonClassName}
+              >
+                {isGradeSaving
+                  ? "Saving..."
+                  : isEditingGrades
+                    ? "Save Edits"
+                    : "Edit Grades"}
+              </button>
+              {gradeSaveMessage ? (
+                <p
+                  className={`text-sm ${
+                    gradeSaveMessage.toLowerCase().includes("failed")
+                      ? "text-red-600"
+                      : "text-green-600"
+                  }`}
+                >
+                  {gradeSaveMessage}
                 </p>
-
-                {Object.entries(questionGrades).map(
-                  ([k, q]) => (
-                    <div key={k} className="flex justify-between text-sm">
-                      <span>{q.label}</span>
-                      <span className={getQuestionStatusClassName(q.status)}>
-                        {q.status}
-                      </span>
+              ) : null}
+            </div>
+          </CardHeader>
+          <CardContent className="flex flex-1 min-h-0 flex-col">
+            {currentGrade ? (
+              <div className="flex flex-1 min-h-0 flex-col space-y-4">
+                {isEditingGrades ? (
+                  <>
+                    <div className="space-y-2">
+                      <label className="block text-sm font-medium">
+                        Detected Nature Code
+                      </label>
+                      <select
+                        value={detectedNatureCodeValue}
+                        onChange={(e) =>
+                          handleGradeChange(
+                            "detected_nature_code",
+                            e.target.value
+                          )
+                        }
+                        className="w-full rounded-md border border-gray-300 px-3 py-2"
+                      >
+                        <option value="">Select a nature code</option>
+                        {!hasDetectedNatureCodeOption && detectedNatureCodeValue && (
+                          <option value={detectedNatureCodeValue}>
+                            Current: {detectedNatureCodeValue}
+                          </option>
+                        )}
+                        {natureCodeOptions.map((protocol) => (
+                          <option key={protocol.id} value={protocol.title}>
+                            {protocol.id}: {protocol.title}
+                          </option>
+                        ))}
+                      </select>
                     </div>
-                  )
+
+                    <div className="flex flex-1 min-h-0 max-h-[32rem] flex-col space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="block text-sm font-medium">
+                          Questions
+                        </label>
+                        <button
+                          type="button"
+                          onClick={handleAddQuestion}
+                          className="rounded bg-blue-500 px-2 py-1 text-xs text-white transition-colors hover:bg-blue-600"
+                        >
+                          Add Question
+                        </button>
+                      </div>
+
+                      <div className="flex-1 min-h-0 space-y-2 overflow-y-auto">
+                        {Object.entries(gradeData?.grades || {}).map(
+                          ([key, question]: [string, any]) => (
+                            <div
+                              key={key}
+                              className="flex items-center gap-2 rounded border border-gray-200 p-2"
+                            >
+                              <input
+                                type="text"
+                                value={question.label}
+                                onChange={(e) =>
+                                  handleQuestionLabelChange(
+                                    key,
+                                    e.target.value
+                                  )
+                                }
+                                className="flex-1 rounded border border-gray-300 px-2 py-1 text-sm"
+                                placeholder="Question label"
+                              />
+                              <select
+                                value={question.code || "2"}
+                                onChange={(e) =>
+                                  handleGradeChange(
+                                    `question_${key}`,
+                                    e.target.value
+                                  )
+                                }
+                                className="rounded border border-gray-300 px-2 py-1 text-sm"
+                              >
+                                <option value="1">
+                                  Asked Correctly
+                                </option>
+                                <option value="2">Not Asked</option>
+                                <option value="3">Asked Incorrectly</option>
+                                <option value="4">
+                                  Not as Scripted
+                                </option>
+                                <option value="5">N/A</option>
+                                <option value="6">Obvious</option>
+                                <option value="RC">Recorded Correctly</option>
+                              </select>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteQuestion(key)}
+                                className="rounded bg-red-500 px-2 py-1 text-xs text-white transition-colors hover:bg-red-600"
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          )
+                        )}
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-blue-600">
+                      {currentGrade.grade_percentage}%
+                    </p>
+
+                    <div className="space-y-1">
+                      {Object.entries(questionGrades).map(
+                        ([key, question]: [string, any]) => (
+                          <div key={key} className="flex justify-between text-sm">
+                            <span>{question.label}</span>
+                            <span className={getQuestionStatusClassName(question.status)}>
+                              {question.status}
+                            </span>
+                          </div>
+                        )
+                      )}
+                    </div>
+                  </>
                 )}
               </div>
             ) : (
@@ -487,16 +846,17 @@ const handlePrintAll = async () => {
         </Card>
 
         {/* Audio */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Audio and Transcript</CardTitle>
-            Timestamp: {`${getFileParts(matchedAudio).dateTime.toLocaleDateString()}, ${getFileParts(matchedAudio).dateTime.toLocaleTimeString()
-              }`}
-            <CardDescription>{matchedAudio}</CardDescription>
-          </CardHeader>
-
-          <CardContent>              
-            <div className="mb-4 flex justify-end">
+        <Card className="flex h-full flex-col">
+          <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
+            <div className="min-w-0">
+              <CardTitle>Audio and Transcript</CardTitle>
+              <div>
+                Timestamp: {`${getFileParts(matchedAudio).dateTime.toLocaleDateString()}, ${getFileParts(matchedAudio).dateTime.toLocaleTimeString()
+                  }`}
+              </div>
+              <CardDescription>{matchedAudio}</CardDescription>
+            </div>
+            <div className="flex flex-col items-end gap-2">
               <button
                 type="button"
                 onClick={handleEditButtonClick}
@@ -509,10 +869,24 @@ const handlePrintAll = async () => {
                     ? "Save Edits"
                     : "Edit Transcript"}
               </button>
+              {transcriptSaveMessage ? (
+                <p
+                  className={`text-sm ${
+                    transcriptSaveMessage.toLowerCase().includes("failed")
+                      ? "text-red-600"
+                      : "text-green-600"
+                  }`}
+                >
+                  {transcriptSaveMessage}
+                </p>
+              ) : null}
             </div>
+          </CardHeader>
+
+          <CardContent className="flex flex-1 min-h-0 flex-col">
 
             {matchedAudio ? (
-              <>
+              <div className="flex flex-1 min-h-0 flex-col">
                 <PlayerController
                   ref={playerControllerRef}
                   transcriptFile={currentTranscript}
@@ -520,18 +894,7 @@ const handlePrintAll = async () => {
                   editable={isEditingTranscript}
                   dispatcherName={activeDispatcher.name}
                 />
-                {transcriptSaveMessage ? (
-                  <p
-                    className={`mt-3 text-sm ${
-                      transcriptSaveMessage.toLowerCase().includes("failed")
-                        ? "text-red-600"
-                        : "text-green-600"
-                    }`}
-                  >
-                    {transcriptSaveMessage}
-                  </p>
-                ) : null}
-              </>
+              </div>
             ) : (
               <p className="text-gray-500">No audio available</p>
             )}

@@ -28,6 +28,8 @@ GRADE_KEY = {
 
 def calculate_final_grade(grades: Dict[str, str], questions_dict: Dict[str, str]) -> float:
     """Calculate the final numeric percentage from question grades."""
+    print(f"Calulating final grade.\nGrades: {grades}\nQuestions: {questions_dict}")
+
     total_points = 0
     earned_points = 0.0
 
@@ -43,7 +45,7 @@ def calculate_final_grade(grades: Dict[str, str], questions_dict: Dict[str, str]
 
     if total_points == 0:
         return 0.0
-
+    print(f"Earned ({earned_points}), Total ({total_points})")
     return (earned_points / total_points) * 100
 
 def clean_response(response):
