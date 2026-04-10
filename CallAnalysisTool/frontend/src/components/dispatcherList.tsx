@@ -75,6 +75,7 @@ const DispatcherList = () => {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [dispatchers, setDispatchers] = useState<Dispatcher[]>([]);
+  const [stationGrade, setStationGrade] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [startDate, setStartDate] = useState<string>(
     searchParams.get("startDate") || ""
@@ -97,9 +98,13 @@ const DispatcherList = () => {
         ? data.dispatchers
         : [];
 
+      setStationGrade(
+        typeof data?.stationGrade === "number" ? data.stationGrade : null
+      );
       setDispatchers(normalizeDispatchers(backendDispatchers));
     } catch (error) {
       console.error("Error loading dispatchers:", error);
+      setStationGrade(null);
       setDispatchers([]);
       setErrorMessage(
         error instanceof Error
@@ -203,6 +208,10 @@ const DispatcherList = () => {
     overallGrade:
       typeof dispatcher.overallGrade === "number" ? dispatcher.overallGrade : 0,
   }));
+  const totalStationCalls = dispatchersWithGrades.reduce(
+    (sum, dispatcher) => sum + (dispatcher.numGrades ?? 0),
+    0
+  );
 
   const filteredDispatchers = dispatchersWithGrades.filter((dispatcher) =>
     dispatcher.name.toLowerCase().includes(searchQuery.toLowerCase())
@@ -267,87 +276,113 @@ const DispatcherList = () => {
           />
         </div>
 
-        <div className="mx-auto max-w-xl rounded-xl border border-gray-200 bg-gray-50 p-4 shadow-sm">
-          <div className="flex flex-col items-center gap-4 md:flex-row md:items-end md:justify-center">
-            <div className="md:w-44">
-              <label
-                htmlFor="dispatcher-start-date"
-                className="mb-1 block text-sm font-medium text-gray-700"
-              >
-                From
-              </label>
-              <Input
-                id="dispatcher-start-date"
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                max={endDate || undefined}
-              />
+        <div className="mx-auto max-w-4xl rounded-xl border border-gray-200 bg-gray-50 p-4 shadow-sm">
+          <div className="flex flex-col lg:flex-row lg:items-center">
+            <div className="flex self-stretch rounded-lg border border-gray-200 bg-white px-4 py-3 lg:min-w-50 lg:self-auto lg:items-center">
+              <div>
+                <p className="text-sm font-medium text-gray-600">Overall Station Grade</p>
+                {stationGrade !== null ? (
+                  <div>
+                    <p className={`text-2xl font-bold ${gradeColor(stationGrade)}`}>
+                      {stationGrade.toFixed(1)}%
+                    </p>
+                    <p className="text-sm text-gray-500">
+                      Average of {totalStationCalls} call
+                      {totalStationCalls === 1 ? "" : "s"} <br></br>from {dispatchers.length} dispatcher
+                      {dispatchers.length === 1 ? "" : "s"}
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-500">
+                    No grades in the selected date range.
+                  </p>
+                )}
+              </div>
             </div>
 
-            <div className="md:w-44">
-              <label
-                htmlFor="dispatcher-end-date"
-                className="mb-1 block text-sm font-medium text-gray-700"
-              >
-                To
-              </label>
-              <Input
-                id="dispatcher-end-date"
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                min={startDate || undefined}
-              />
-            </div>
+            <div className="flex flex-1 flex-col gap-4">
+              <div className="flex flex-col items-center gap-4 md:flex-row md:items-end md:justify-center">
+                <div className="md:w-44">
+                  <label
+                    htmlFor="dispatcher-start-date"
+                    className="mb-1 block text-sm font-medium text-gray-700"
+                  >
+                    From
+                  </label>
+                  <Input
+                    id="dispatcher-start-date"
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    max={endDate || undefined}
+                  />
+                </div>
 
-            <div className="flex gap-2 md:pb-px">
-              <Button onClick={handleDateSearch} disabled={isLoading}>
-                {isLoading ? "Loading..." : "Search"}
-              </Button>
-              <Button
-                onClick={handleClearDateSearch}
-                disabled={isLoading || (!startDate && !endDate)}
-                className="bg-red-500 text-white hover:bg-red-600"
-              >
-                Reset
-              </Button>
-            </div>
-          </div>
+                <div className="md:w-44">
+                  <label
+                    htmlFor="dispatcher-end-date"
+                    className="mb-1 block text-sm font-medium text-gray-700"
+                  >
+                    To
+                  </label>
+                  <Input
+                    id="dispatcher-end-date"
+                    type="date"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    min={startDate || undefined}
+                  />
+                </div>
 
-          <div className="mt-4 flex flex-wrap justify-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleTodaySearch}
-              disabled={isLoading}
-            >
-              Today
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleLast7DaysSearch}
-              disabled={isLoading}
-            >
-              Last 7 Days
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleLast30DaysSearch}
-              disabled={isLoading}
-            >
-              Last 30 Days
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleThisYearSearch}
-              disabled={isLoading}
-            >
-              This Year
-            </Button>
+                <div className="flex gap-2 md:pb-px">
+                  <Button onClick={handleDateSearch} disabled={isLoading}>
+                    {isLoading ? "Loading..." : "Search"}
+                  </Button>
+                  <Button
+                    onClick={handleClearDateSearch}
+                    disabled={isLoading || (!startDate && !endDate)}
+                    className="bg-red-500 text-white hover:bg-red-600"
+                  >
+                    Reset
+                  </Button>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap justify-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleTodaySearch}
+                  disabled={isLoading}
+                >
+                  Today
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleLast7DaysSearch}
+                  disabled={isLoading}
+                >
+                  Last 7 Days
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleLast30DaysSearch}
+                  disabled={isLoading}
+                >
+                  Last 30 Days
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleThisYearSearch}
+                  disabled={isLoading}
+                >
+                  This Year
+                </Button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -355,8 +390,8 @@ const DispatcherList = () => {
       {errorMessage && (
         <p className="mb-6 text-center text-sm text-red-600">{errorMessage}</p>
       )}
-
-      {topDispatchers.length > 0 && searchQuery.trim().length === 0 && !isLoading && (
+      {/* Top dispatchers, uncomment to show again */}
+      {/* {topDispatchers.length > 0 && searchQuery.trim().length === 0 && !isLoading && (
         <div className="mb-10">
           <h2 className="mb-4 text-center text-xl font-bold text-blue-600 sm:text-2xl">
             Top Dispatchers
@@ -392,7 +427,7 @@ const DispatcherList = () => {
             ))}
           </div>
         </div>
-      )}
+      )} */}
 
       <div className="mb-10">
         <h2 className="mb-4 text-center text-xl font-bold sm:text-2xl">

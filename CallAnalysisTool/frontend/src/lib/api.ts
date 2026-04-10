@@ -55,6 +55,7 @@ export interface Question {
 }
 
 interface DispatcherSummaryResponse {
+  stationGrade?: number | null;
   dispatchers?: Array<{
     name?: string;
     overallGrade?: number;
