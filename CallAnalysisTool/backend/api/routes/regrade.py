@@ -38,23 +38,16 @@ def regrade():
             
         # Do all processing in temp dir
         date = time = agent_name = (None,) * 3
-        cdr_path = audio_path = transcript_path = grades_path = nature_code = (None,) * 5
-        transcript_data = None
 
         temp_dir = OUTPUT_DIR / "_tmp" / str(uuid.uuid4().hex)
         temp_dir.mkdir(parents=True, exist_ok=True)
         TEMP_PATH = Path(temp_dir)
-
-        print("Raw incoming data:", request.data)
     
-        # 2. Safely attempt to parse JSON
         data = request.get_json()
-        print("Parsed JSON dictionary:", data)
     
         if data is None:
-            return {"error": "Flask could not parse the JSON. Check headers/body."}, 400
+            return {"error": "Flask could not parse the JSON."}, 400
         
-        # 3. Safely extract the string using the EXACT key from React
         new_nature_code = data.get('natureCode')
 
         BASE_DIR = os.path.dirname(os.path.abspath(__file__))
