@@ -10,12 +10,9 @@ import {
   CardContent,
 } from "@/components/ui/card";
 import PlayerController, { PlayerControllerHandle } from "./PlayerController/PlayerController";
-<<<<<<< HEAD
-import { fetchBackendFile, regradeFile } from "@/lib/api";
+import { regradeFile } from "@/lib/api";
 import ProgressModal from "./ProgressModal";
-=======
 import exportRecord, { PrintCallRecord } from "./PrintRecord";
->>>>>>> b5872358db0aabf28648972e1dda54275a0c9f65
 
 /* =========================
   Types
@@ -209,7 +206,6 @@ const DispatcherDetails = ({
   const [transcriptSaveMessage, setTranscriptSaveMessage] = useState("");
   const [isTranscriptSaving, setIsTranscriptSaving] = useState(false);
   const playerControllerRef = useRef<PlayerControllerHandle | null>(null);
-<<<<<<< HEAD
   const [uploadProgress, setUploadProgress] = useState<string>("");
   const [progressPercentage, setProgressPercentage] = useState<number>(0);
   const [showProgressModal, setShowProgressModal] = useState<boolean>(false);
@@ -249,10 +245,6 @@ const DispatcherDetails = ({
   const totalElapsedTime = formatElapsedTime(
     totalStartTime ? elapsedNow - totalStartTime : null
   );
-=======
-  
-
->>>>>>> b5872358db0aabf28648972e1dda54275a0c9f65
 
   /* -------- Load localStorage -------- */
   const loadLocalData = () => {
@@ -547,7 +539,7 @@ const handlePrintAll = async () => {
 
                   <button
                     type="button"
-                    onClick={() => { console.log(typeof currentGrade.detected_nature_code); handleRegradeButtonClick(currentGrade.detected_nature_code ?? "case_entry", currentTranscript); }}
+                    onClick={() => handleRegradeButtonClick(currentGrade.detected_nature_code ?? "case_entry", currentTranscript)}
                     className={paginationButtonClassName}
                   >
                     Regrade

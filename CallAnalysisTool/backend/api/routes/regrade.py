@@ -10,9 +10,7 @@ from flask import Blueprint, request, jsonify
 from pathvalidate import sanitize_filepath
 
 from api.services.ai_grader import (
-    detect_nature_codes_in_memory,
-    grade_transcript_file,
-    identify_nature_code,
+    grade_transcript_file
 )
 
 regrade_bp = Blueprint('regrade', __name__)

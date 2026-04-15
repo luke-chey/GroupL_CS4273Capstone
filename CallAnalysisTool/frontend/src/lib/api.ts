@@ -178,6 +178,9 @@ async function postRegradeRequest(
         `API error (${response.status}): ${errorText || response.statusText}`
       );
     }
+    else {
+      window.location.reload(); 
+    }
 
     // Handle different response types
     const data = await response.json();
