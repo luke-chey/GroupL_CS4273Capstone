@@ -341,8 +341,8 @@ const DispatcherDetails = ({
     : "/records";
 
   const handleRegradeButtonClick = async (
-    grades: FileGrade,
-    transcript: string
+    natureCode: string,
+    transcriptName: string
   ) => {
     setIsRegrading(true);
     setShowProgressModal(true);
@@ -353,7 +353,8 @@ const DispatcherDetails = ({
     setTotalStartTime(startedAt);
 
     try {
-      const response = await regradeFile(grades, transcript);
+      console.log(typeof natureCode)
+      const response = await regradeFile(natureCode || "case_entry", transcriptName || "");
     } catch (error) {
       console.error("Regrade error:", error);
       alert(
@@ -471,14 +472,7 @@ const DispatcherDetails = ({
 
                   <button
                     type="button"
-                    onClick={() => fetchBackendFile<string>(currentTranscript)
-                      .then((transcript) => {
-                        handleRegradeButtonClick(currentGrade, JSON.stringify(transcript))
-                      })
-                      .catch((error) => {
-                        console.error("Error loading transcription:", error);
-                      })
-                    }
+                    onClick={() => { console.log(typeof currentGrade.detected_nature_code); handleRegradeButtonClick(currentGrade.detected_nature_code ?? "case_entry", currentTranscript); }}
                     className={paginationButtonClassName}
                   >
                     Regrade

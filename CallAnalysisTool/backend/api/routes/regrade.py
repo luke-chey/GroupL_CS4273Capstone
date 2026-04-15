@@ -1,4 +1,6 @@
 # Standard Library
+import json
+import os
 import shutil
 import uuid
 from pathlib import Path
@@ -31,15 +33,10 @@ def regrade():
     try:
         print("Regrade endpoint called")
 
-        if 'grades' not in request.files:
-            print("Grades detected")
+        if 'natureCode' not in request.files:
+            print("Nature code detected")
         else:
-            return jsonify({'error': 'No grades provided'}), 400
-        
-        if 'transcript' not in request.files:
-            print("Transcript detected")
-        else:
-            return jsonify({'error': 'No transcript provided'}), 400
+            return jsonify({'error': 'No nature code provided'}), 400
             
         # Do all processing in temp dir
         date = time = agent_name = (None,) * 3
@@ -50,37 +47,47 @@ def regrade():
         temp_dir.mkdir(parents=True, exist_ok=True)
         TEMP_PATH = Path(temp_dir)
 
-        grades = request.files.get('grades')
-        transcript = request.files.get('transcript')
+        print("Raw incoming data:", request.data)
+    
+        # 2. Safely attempt to parse JSON
+        data = request.get_json()
+        print("Parsed JSON dictionary:", data)
+    
+        if data is None:
+            return {"error": "Flask could not parse the JSON. Check headers/body."}, 400
+        
+        # 3. Safely extract the string using the EXACT key from React
+        new_nature_code = data.get('natureCode')
 
-        new_nature_code = grades['detected_nature_code']
-        response, grades_path = grade_transcript_file(new_nature_code, transcript, TEMP_PATH)
+        BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+        transcriptName = data.get('transcriptName')
+        transcriptInfo = transcriptName.split("_")
+        partialtranscriptPath = transcriptInfo[0] + "\\" + transcriptInfo[1] + "_" + transcriptInfo[2] + "_" + transcriptInfo[3] + "\\" + transcriptName
+        transcriptPath = os.path.join(BASE_DIR, '..\\..\\output\\', partialtranscriptPath)
+
+        response, grades_path = grade_transcript_file(new_nature_code, transcriptPath, TEMP_PATH)
 
         # Create destination folder and move everything there
         # Base output directory
         base_dir = Path(OUTPUT_DIR)
 
         # Create folder: output/{agent_name}/{date}_{time}_{nature_code}/
-        dest_dir = base_dir / agent_name / f"{date}_{time}_{nature_code}"
+        agent_name = transcriptInfo[0]
+        date = transcriptInfo[1]
+        time = transcriptInfo[2]
+        dest_dir = base_dir / agent_name / f"{date}_{time}_{new_nature_code}"
         dest_dir = sanitize_filepath(dest_dir, replacement_text="-")
         dest_dir.mkdir(parents=True, exist_ok=True)
 
         # Build base filename prefix
-        base_name = f"{agent_name}_{date}_{time}_{nature_code}"
+        base_name = f"{agent_name}_{date}_{time}_{new_nature_code}"
 
         # Source paths
-        cdr_src = Path(cdr_path)
-        audio_src = Path(audio_path)
-        transcript_src = Path(transcript_path)
+        transcript_src = Path(transcriptPath)
         grades_src = Path(grades_path)
 
         # Destination paths (preserve correct extensions and sanitize)
-        cdr_dst = dest_dir / f"{base_name}_cdr{cdr_src.suffix}"
-        cdr_dst = sanitize_filepath(cdr_dst, replacement_text="-")
-
-        audio_dst = dest_dir / f"{base_name}_audio{audio_src.suffix}"
-        audio_dst = sanitize_filepath(audio_dst, replacement_text="-")
-
         transcript_dst = dest_dir / f"{base_name}_transcript{transcript_src.suffix}"
         transcript_dst = sanitize_filepath(transcript_dst, replacement_text="-")
 
@@ -89,8 +96,6 @@ def regrade():
 
         # Source/dest dict
         source_dest_dict = {
-            cdr_src: cdr_dst,
-            audio_src: audio_dst,
             transcript_src: transcript_dst,
             grades_src: grades_dst
         }

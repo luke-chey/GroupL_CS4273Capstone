@@ -106,14 +106,11 @@ export async function uploadTranscriptForAnalysis(
 }
 
 export async function regradeFile(
-  grades: FileGrade,
-  transcript: string
+  natureCode: string,
+  transcriptName: string
 ): Promise<UploadPipelineResponse> {
-  const formData = new FormData();
-  formData.append("grades", JSON.stringify(grades));
-  formData.append("transcript", transcript);
 
-  return postRegradeRequest(formData);
+  return postRegradeRequest(natureCode, transcriptName);
 }
 
 async function postUploadRequest(
@@ -162,16 +159,16 @@ async function postUploadRequest(
 }
 
 async function postRegradeRequest(
-  body: BodyInit,
-  headers?: HeadersInit
+  natureCode: string,
+  transcriptName: string
 ): Promise<UploadPipelineResponse> {
   const apiBaseUrl = getApiBaseUrl();
 
   try {
     const response = await fetch(`${apiBaseUrl}/api/regrade`, {
       method: "POST",
-      headers,
-      body,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ natureCode: natureCode, transcriptName: transcriptName })
     });
 
     if (!response.ok) {
