@@ -120,7 +120,8 @@ def get_dispatchers():
 
         # Initialize response
         response = {
-            "dispatchers": []
+            "dispatchers": [],
+            "stationGrade": None,
         }
 
         # Iterate over dispatcher folders
@@ -190,6 +191,15 @@ def get_dispatchers():
                 continue
 
             response["dispatchers"].append(dispatcher)
+
+        if response["dispatchers"]:
+            dispatcher_grade_total = sum(
+                dispatcher["overallGrade"] for dispatcher in response["dispatchers"]
+            )
+            response["stationGrade"] = round(
+                dispatcher_grade_total / len(response["dispatchers"]),
+                2
+            )
 
         # Sort by overall grade
         response["dispatchers"].sort(key=lambda x: x["overallGrade"])

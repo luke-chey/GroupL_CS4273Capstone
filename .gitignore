@@ -2,8 +2,14 @@
 __pycache__/
 *.pyc
 *.pyo
+*.py[cod]
+*$py.class
+*.so
+.Python
 .venv
 venv/
+env/
+ENV/
 
 # Node
 node_modules/
@@ -18,11 +24,19 @@ testCoverageC
 
 # macOS
 .DS_Store
+Thumbs.db
 
 # Editors/IDEs
 .vscode/
 .idea/
 .vs/
+*.swp
+*.swo
+*~
+
+# Flask
+instance/
+.webassets-cache
 
 # Processed files
 CallAnalysisTool/backend/output/
@@ -35,6 +49,8 @@ CallAnalysisTool/offline_backup*/
 
 # Environmental variables (confidential)
 .env
+.env.local
 
 # Other
+*.log
 .VSCodeCounter/

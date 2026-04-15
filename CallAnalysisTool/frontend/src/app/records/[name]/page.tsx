@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useEffect } from "react";
+import React, { Suspense, useEffect, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Dispatcher } from "@/types/dispatcher";
@@ -10,7 +10,7 @@ import {
   fetchGradeFile,
 } from "@/lib/api";
 
-export default function DispatcherDetailPage() {
+function DispatcherDetailContent() {
   const params = useParams();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -145,5 +145,13 @@ export default function DispatcherDetailPage() {
       startDate={startDate}
       endDate={endDate}
     />
+  );
+}
+
+export default function DispatcherDetailPage() {
+  return (
+    <Suspense fallback={<div className="container mx-auto p-6"><p>Loading...</p></div>}>
+      <DispatcherDetailContent />
+    </Suspense>
   );
 }
