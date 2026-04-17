@@ -54,6 +54,24 @@ export interface Question {
   label: string;
 }
 
+export interface NatureCodeOption {
+  id: string;
+  name: string;
+}
+
+export interface NatureCodeGradeTemplate {
+  detected_nature_code: string;
+  nature_code_name?: string;
+  grades: {
+    [questionId: string]: {
+      code: string;
+      label: string;
+      status: string;
+      reasoning?: string;
+    };
+  };
+}
+
 interface DispatcherSummaryResponse {
   stationGrade?: number | null;
   dispatchers?: Array<{
@@ -289,6 +307,18 @@ export async function fetchGradeFile(filename: string): Promise<FileGrade> {
 
 export async function fetchBackendFile<T>(filename: string): Promise<T> {
   return fetchJson<T>(`/api/files/${encodeURIComponent(filename)}`);
+}
+
+export async function fetchNatureCodeOptions(): Promise<NatureCodeOption[]> {
+  return fetchJson<NatureCodeOption[]>(`/api/files/nature-codes`);
+}
+
+export async function fetchNatureCodeGradeTemplate(
+  natureCodeId: string
+): Promise<NatureCodeGradeTemplate> {
+  return fetchJson<NatureCodeGradeTemplate>(
+    `/api/files/nature-codes/${encodeURIComponent(natureCodeId)}`
+  );
 }
 
 export async function putBackendFile<TResponse = unknown>(

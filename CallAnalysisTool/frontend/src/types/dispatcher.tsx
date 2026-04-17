@@ -4,11 +4,13 @@ import { Question } from "@/lib/api";
 export interface FileGrade {
   grade_percentage: number;
   detected_nature_code?: string;
+  nature_code_name?: string;
   grades?: {
     [questionId: string]: {
       code: string;
       label: string;
       status: string;
+      reasoning?: string;
     };
   };
   per_question?: {
@@ -16,6 +18,7 @@ export interface FileGrade {
       code: string;
       label: string;
       status: string;
+      reasoning?: string;
     };
   };
 }

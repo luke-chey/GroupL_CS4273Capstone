@@ -1,7 +1,7 @@
 "use client";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Dispatcher, DispatcherRecord, FileParts } from "@/types/dispatcher";
+import { Dispatcher, DispatcherRecord, FileGrade, FileParts } from "@/types/dispatcher";
 import {
   Card,
   CardHeader,
@@ -11,8 +11,11 @@ import {
 } from "@/components/ui/card";
 import PlayerController, { PlayerControllerHandle } from "./PlayerController/PlayerController";
 import exportRecord, { PrintCallRecord } from "./PrintRecord";
-import { protocols } from "./ProtocolBook";
-import { putBackendFile } from "@/lib/api";
+import {
+  fetchNatureCodeGradeTemplate,
+  fetchNatureCodeOptions,
+  putBackendFile,
+} from "@/lib/api";
 
 /* =========================
   Types
@@ -34,6 +37,32 @@ interface BatchPage {
 interface StoredBatchData {
   pages?: BatchPage[];
 }
+
+interface EditableQuestionGrade {
+  code: string;
+  label: string;
+  status: string;
+  reasoning?: string;
+}
+
+interface EditableGradeData {
+  grade_percentage: number;
+  detected_nature_code: string;
+  nature_code_name?: string;
+  grades: Record<string, EditableQuestionGrade>;
+}
+
+interface GradeSaveResponse {
+  new_grade?: number;
+  filename?: string;
+  record_dir?: string;
+  renamed_files?: Record<string, string>;
+}
+
+type IdNameLike = {
+  id?: unknown;
+  name?: unknown;
+};
 
 /* =========================
   Helpers
@@ -174,7 +203,7 @@ const GRADE_KEY: Record<string, string> = {
   "2": "Not Asked",
   "3": "Asked Incorrectly",
   "4": "Not As Scripted",
-  "5": "N/A",
+  "5": "Not Applicable",
   "6": "Obvious",
   RC: "Recorded Correctly",
 };
@@ -198,6 +227,91 @@ const formatDateRangePart = (dateValue?: string): string | null => {
   return `${Number(month)}/${Number(day)}/${year}`;
 };
 
+const cloneGradeData = (
+  grade: EditableGradeData | null
+): EditableGradeData | null => {
+  if (!grade) {
+    return null;
+  }
+
+  return {
+    ...grade,
+    grades: Object.fromEntries(
+      Object.entries(grade.grades || {}).map(([key, question]) => [
+        key,
+        { ...question },
+      ])
+    ),
+  };
+};
+
+const normalizeTextValue = (value: unknown): string => {
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (value && typeof value === "object") {
+    const maybeIdName = value as IdNameLike;
+    if (typeof maybeIdName.id === "string") {
+      return maybeIdName.id;
+    }
+    if (typeof maybeIdName.name === "string") {
+      return maybeIdName.name;
+    }
+  }
+
+  return "";
+};
+
+const normalizeGradeCode = (value: unknown): string => {
+  const code = String(value ?? "").trim();
+  return GRADE_KEY[code] ? code : "2";
+};
+
+const getDisplayStatus = (question: EditableQuestionGrade | undefined): string => {
+  if (!question) {
+    return "";
+  }
+
+  const normalizedStatus = normalizeTextValue(question.status);
+  if (normalizedStatus) {
+    return normalizedStatus;
+  }
+
+  return GRADE_KEY[normalizeGradeCode(question.code)] || "";
+};
+
+const renameRecordFileReferences = (
+  record: DispatcherRecord,
+  renamedFiles: Record<string, string>
+): DispatcherRecord => ({
+  ...record,
+  audioFile: record.audioFile ? (renamedFiles[record.audioFile] || record.audioFile) : record.audioFile,
+  cdrFile: record.cdrFile ? (renamedFiles[record.cdrFile] || record.cdrFile) : record.cdrFile,
+  transcriptFile: record.transcriptFile
+    ? (renamedFiles[record.transcriptFile] || record.transcriptFile)
+    : record.transcriptFile,
+  gradeFile: record.gradeFile ? (renamedFiles[record.gradeFile] || record.gradeFile) : record.gradeFile,
+});
+
+const renameFileList = (
+  files: string[] | undefined,
+  renamedFiles: Record<string, string>
+): string[] => (files || []).map((file) => renamedFiles[file] || file);
+
+const renameGradeMap = (
+  grades: Dispatcher["grades"] | undefined,
+  renamedFiles: Record<string, string>
+): Dispatcher["grades"] => {
+  const nextGrades: NonNullable<Dispatcher["grades"]> = {};
+
+  Object.entries(grades || {}).forEach(([filename, grade]) => {
+    nextGrades[renamedFiles[filename] || filename] = grade;
+  });
+
+  return nextGrades;
+};
+
 /* =========================
    Component
 ========================= */
@@ -212,12 +326,18 @@ const DispatcherDetails = ({
   const [dispatchers, setDispatchers] = useState<Dispatcher[]>([]);
   const [batchPages, setBatchPages] = useState<BatchPage[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [gradeOverrides, setGradeOverrides] = useState<Record<string, any>>({});
+  const [gradeOverrides, setGradeOverrides] = useState<Record<string, FileGrade>>({});
   const [overallGradeOverride, setOverallGradeOverride] = useState<number | null>(null);
   const [isEditingGrades, setIsEditingGrades] = useState(false);
-  const [gradeData, setGradeData] = useState<any>(null);
+  const [gradeData, setGradeData] = useState<EditableGradeData | null>(null);
+  const [originalGradeData, setOriginalGradeData] = useState<EditableGradeData | null>(null);
   const [gradeSaveMessage, setGradeSaveMessage] = useState("");
   const [isGradeSaving, setIsGradeSaving] = useState(false);
+  const [isNatureCodesLoading, setIsNatureCodesLoading] = useState(false);
+  const [isNatureCodeTemplateLoading, setIsNatureCodeTemplateLoading] = useState(false);
+  const [natureCodeOptions, setNatureCodeOptions] = useState<
+    Array<{ id: string; name: string }>
+  >([]);
   const [isEditingTranscript, setIsEditingTranscript] = useState(false);
   const [transcriptSaveMessage, setTranscriptSaveMessage] = useState("");
   const [isTranscriptSaving, setIsTranscriptSaving] = useState(false);
@@ -243,8 +363,11 @@ const DispatcherDetails = ({
   /* -------- Derived Data -------- */
 
   const dispatcherMap = useMemo(() => {
-    const map = new Map(dispatchers.map((d) => [d.id, d]));
+    const map = new Map<string, Dispatcher>();
     map.set(dispatcher.id, dispatcher);
+    dispatchers.forEach((storedDispatcher) => {
+      map.set(storedDispatcher.id, storedDispatcher);
+    });
     return map;
   }, [dispatchers, dispatcher]);
 
@@ -301,13 +424,13 @@ const DispatcherDetails = ({
     : undefined;
   const questionGrades = currentGrade?.grades || currentGrade?.per_question || {};
   const detectedNatureCodeValue =
-    gradeData?.detected_nature_code ?? currentGrade?.detected_nature_code ?? "";
-  const natureCodeOptions = protocols.filter((protocol) => protocol.id !== "0");
+    normalizeTextValue(
+      gradeData?.detected_nature_code ?? currentGrade?.detected_nature_code ?? ""
+    );
   const hasDetectedNatureCodeOption = natureCodeOptions.some(
-    (protocol) =>
-      protocol.title === detectedNatureCodeValue ||
-      protocol.id === detectedNatureCodeValue
+    (protocol) => protocol.id === detectedNatureCodeValue
   );
+  const activeDispatcherName = normalizeTextValue(activeDispatcher.name) || activeDispatcher.id;
 
   const currentRecord = currentTranscript
     ? recordByTranscript.get(currentTranscript)
@@ -320,8 +443,8 @@ const DispatcherDetails = ({
   const formattedEndDate = formatDateRangePart(endDate);
   const headerTitle =
     formattedStartDate && formattedEndDate
-      ? `${activeDispatcher.name} (${formattedStartDate} - ${formattedEndDate})`
-      : activeDispatcher.name;
+      ? `${activeDispatcherName} (${formattedStartDate} - ${formattedEndDate})`
+      : activeDispatcherName;
   const backQuery = new URLSearchParams();
 
   if (startDate) {
@@ -365,6 +488,7 @@ const DispatcherDetails = ({
   const handleGradesEditButtonClick = async () => {
     if (!isEditingGrades) {
       setGradeSaveMessage("");
+      setOriginalGradeData(cloneGradeData(gradeData));
       setIsEditingGrades(true);
       return;
     }
@@ -388,12 +512,14 @@ const DispatcherDetails = ({
     setGradeSaveMessage("");
 
     try {
-      const response = await putBackendFile<{ new_grade?: number }>(
+      const response = await putBackendFile<GradeSaveResponse>(
         gradeFilename,
         replacementPayload
       );
       const savedGradePercentage =
         response.new_grade ?? replacementPayload.grade_percentage;
+      const renamedFiles = response.renamed_files || {};
+      const nextTranscript = renamedFiles[currentTranscript] || currentTranscript;
       const gradedFilesCount = transcripts.filter(
         (transcriptFilename) => effectiveGrades[transcriptFilename]
       ).length;
@@ -413,8 +539,13 @@ const DispatcherDetails = ({
         grade_percentage: savedGradePercentage,
       };
       setGradeOverrides((previous) => ({
-        ...previous,
-        [currentTranscript]: savedPayload,
+        ...Object.fromEntries(
+          Object.entries(previous).map(([filename, grade]) => [
+            renamedFiles[filename] || filename,
+            grade,
+          ])
+        ),
+        [nextTranscript]: savedPayload,
       }));
 
       const storedDispatchers = parseStoredDispatchers(
@@ -426,19 +557,60 @@ const DispatcherDetails = ({
 
         return {
           ...storedDispatcher,
+          files: storedDispatcher.files
+            ? {
+                transcriptFiles: renameFileList(
+                  storedDispatcher.files.transcriptFiles,
+                  renamedFiles
+                ),
+                audioFiles: renameFileList(
+                  storedDispatcher.files.audioFiles,
+                  renamedFiles
+                ),
+              }
+            : storedDispatcher.files,
+          records: (storedDispatcher.records || []).map((record) =>
+            renameRecordFileReferences(record, renamedFiles)
+          ),
           grades: {
-            ...(storedDispatcher.grades || {}),
-            [currentTranscript]: savedPayload,
+            ...renameGradeMap(storedDispatcher.grades, renamedFiles),
+            [nextTranscript]: savedPayload,
           },
         };
       });
 
       localStorage.setItem("dispatchers", JSON.stringify(storedDispatchers));
       setDispatchers(storedDispatchers);
+
+      const storedBatchPages = parseStoredBatchPages(
+        localStorage.getItem("latestUploadBatch")
+      );
+      const nextBatchPages = storedBatchPages.map((page) => ({
+        ...page,
+        transcriptFilename:
+          renamedFiles[page.transcriptFilename] || page.transcriptFilename,
+      }));
+      localStorage.setItem(
+        "latestUploadBatch",
+        JSON.stringify({ pages: nextBatchPages })
+      );
+      setBatchPages(nextBatchPages);
+
       setOverallGradeOverride(nextOverallGrade);
-      setGradeData((previous: any) =>
+      setGradeData((previous) =>
         previous
-          ? { ...previous, grade_percentage: savedGradePercentage }
+          ? {
+              ...previous,
+              grade_percentage: savedGradePercentage,
+            }
+          : previous
+      );
+      setOriginalGradeData((previous) =>
+        previous
+          ? {
+              ...previous,
+              grade_percentage: savedGradePercentage,
+            }
           : previous
       );
       setGradeSaveMessage("Grades saved.");
@@ -451,23 +623,35 @@ const DispatcherDetails = ({
     }
   };
 
+  const handleCancelGradesEdit = () => {
+    setGradeData(cloneGradeData(originalGradeData));
+    setGradeSaveMessage("");
+    setIsEditingGrades(false);
+  };
+
   useEffect(() => {
     if (!currentGrade) {
       setGradeData(null);
+      setOriginalGradeData(null);
       setIsEditingGrades(false);
       return;
     }
 
-    setGradeData({
+    const sourceQuestions = currentGrade.grades || currentGrade.per_question || {};
+    const initialGradeData = {
       grade_percentage: currentGrade.grade_percentage,
-      detected_nature_code: currentGrade.detected_nature_code || "",
+      detected_nature_code: normalizeTextValue(currentGrade.detected_nature_code),
+      nature_code_name: normalizeTextValue(currentGrade.nature_code_name),
       grades: Object.fromEntries(
-        Object.entries(questionGrades).map(([key, question]: [string, any]) => [
-          key,
-          { ...question },
-        ])
+        Object.entries(sourceQuestions).map(([key, question]) => {
+          const typedQuestion = question as EditableQuestionGrade;
+          return [key, { ...typedQuestion }];
+        })
       ),
-    });
+    } satisfies EditableGradeData;
+
+    setGradeData(cloneGradeData(initialGradeData));
+    setOriginalGradeData(cloneGradeData(initialGradeData));
   }, [currentGrade, currentTranscript]);
 
   useEffect(() => {
@@ -479,8 +663,38 @@ const DispatcherDetails = ({
     setOverallGradeOverride(null);
   }, [activeDispatcher.id]);
 
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadNatureCodes = async () => {
+      setIsNatureCodesLoading(true);
+
+      try {
+        const options = await fetchNatureCodeOptions();
+        if (isMounted) {
+          setNatureCodeOptions(options);
+        }
+      } catch (error) {
+        console.error("Error loading nature codes:", error);
+        if (isMounted) {
+          setGradeSaveMessage("Failed to load nature codes.");
+        }
+      } finally {
+        if (isMounted) {
+          setIsNatureCodesLoading(false);
+        }
+      }
+    };
+
+    loadNatureCodes();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   const handleGradeChange = (field: string, value: string | number) => {
-    setGradeData((previous: any) => {
+    setGradeData((previous) => {
       if (!previous) {
         return previous;
       }
@@ -499,10 +713,11 @@ const DispatcherDetails = ({
         const gradeCode = String(value);
 
         if (nextGrades[questionId]) {
+          const normalizedCode = normalizeGradeCode(gradeCode);
           nextGrades[questionId] = {
             ...nextGrades[questionId],
-            code: gradeCode,
-            status: GRADE_KEY[gradeCode] || nextGrades[questionId].status,
+            code: normalizedCode,
+            status: GRADE_KEY[normalizedCode] || nextGrades[questionId].status,
           };
         }
 
@@ -513,8 +728,62 @@ const DispatcherDetails = ({
     });
   };
 
+  const handleDetectedNatureCodeChange = async (natureCodeId: string) => {
+    if (!gradeData) {
+      return;
+    }
+
+    setGradeSaveMessage("");
+
+    if (!natureCodeId) {
+      setGradeData((previous) =>
+        previous
+          ? {
+              ...previous,
+              detected_nature_code: "",
+              nature_code_name: "",
+            }
+          : previous
+      );
+      return;
+    }
+
+    if (
+      gradeData.detected_nature_code === natureCodeId &&
+      Object.keys(gradeData.grades || {}).length > 0
+    ) {
+      return;
+    }
+
+    setIsNatureCodeTemplateLoading(true);
+
+    try {
+      const template = await fetchNatureCodeGradeTemplate(natureCodeId);
+      setGradeData((previous) =>
+        previous
+          ? {
+              ...previous,
+              detected_nature_code: template.detected_nature_code,
+              nature_code_name: template.nature_code_name || "",
+              grades: Object.fromEntries(
+                Object.entries(template.grades || {}).map(([key, question]) => [
+                  key,
+                  { ...question },
+                ])
+              ),
+            }
+          : previous
+      );
+    } catch (error) {
+      console.error("Error loading nature code template:", error);
+      setGradeSaveMessage("Failed to load questions for that nature code.");
+    } finally {
+      setIsNatureCodeTemplateLoading(false);
+    }
+  };
+
   const handleQuestionLabelChange = (questionId: string, value: string) => {
-    setGradeData((previous: any) => {
+    setGradeData((previous) => {
       if (!previous) {
         return previous;
       }
@@ -532,7 +801,7 @@ const DispatcherDetails = ({
   };
 
   const handleAddQuestion = () => {
-    setGradeData((previous: any) => {
+    setGradeData((previous) => {
       if (!previous) {
         return previous;
       }
@@ -546,6 +815,7 @@ const DispatcherDetails = ({
             code: "2",
             label: "New Question",
             status: "Not Asked",
+            reasoning: "",
           },
         },
       };
@@ -553,7 +823,7 @@ const DispatcherDetails = ({
   };
 
   const handleDeleteQuestion = (questionId: string) => {
-    setGradeData((previous: any) => {
+    setGradeData((previous) => {
       if (!previous) {
         return previous;
       }
@@ -573,11 +843,11 @@ const DispatcherDetails = ({
   const qGrades = grade.grades || grade.per_question || {};
   const record = recordByTranscript.get(transcriptFilename);
 
-  let transcriptData = null;
+  let transcriptData: unknown = null;
   try {
     const { fetchBackendFile } = await import("@/lib/api");
-    transcriptData = await fetchBackendFile(transcriptFilename) as any;
-  } catch (e) {
+    transcriptData = await fetchBackendFile<unknown>(transcriptFilename);
+  } catch {
     console.warn("Could not load transcript for print:", transcriptFilename);
   }
 
@@ -585,7 +855,7 @@ const DispatcherDetails = ({
     transcriptFilename,
     gradeFilename: record?.gradeFile,
     audioFilename: record?.audioFile,
-    dispatcherName: activeDispatcher.name,
+    dispatcherName: activeDispatcherName,
     dateTime: fileParts.dateTime,
     nature: fileParts.nature,
     gradePercentage: grade.grade_percentage,
@@ -732,11 +1002,9 @@ const handlePrintAll = async () => {
                       <select
                         value={detectedNatureCodeValue}
                         onChange={(e) =>
-                          handleGradeChange(
-                            "detected_nature_code",
-                            e.target.value
-                          )
+                          void handleDetectedNatureCodeChange(e.target.value)
                         }
+                        disabled={isNatureCodesLoading || isNatureCodeTemplateLoading}
                         className="w-full rounded-md border border-gray-300 px-3 py-2"
                       >
                         <option value="">Select a nature code</option>
@@ -746,11 +1014,16 @@ const handlePrintAll = async () => {
                           </option>
                         )}
                         {natureCodeOptions.map((protocol) => (
-                          <option key={protocol.id} value={protocol.title}>
-                            {protocol.id}: {protocol.title}
+                          <option key={protocol.id} value={protocol.id}>
+                            {protocol.id}: {protocol.name}
                           </option>
                         ))}
                       </select>
+                      {isNatureCodeTemplateLoading ? (
+                        <p className="text-sm text-gray-500">
+                          Loading question set...
+                        </p>
+                      ) : null}
                     </div>
 
                     <div className="flex flex-1 min-h-0 max-h-[32rem] flex-col space-y-2">
@@ -761,6 +1034,7 @@ const handlePrintAll = async () => {
                         <button
                           type="button"
                           onClick={handleAddQuestion}
+                          disabled={isNatureCodeTemplateLoading}
                           className="rounded bg-blue-500 px-2 py-1 text-xs text-white transition-colors hover:bg-blue-600"
                         >
                           Add Question
@@ -769,7 +1043,7 @@ const handlePrintAll = async () => {
 
                       <div className="flex-1 min-h-0 space-y-2 overflow-y-auto">
                         {Object.entries(gradeData?.grades || {}).map(
-                          ([key, question]: [string, any]) => (
+                          ([key, question]) => (
                             <div
                               key={key}
                               className="flex items-center gap-2 rounded border border-gray-200 p-2"
@@ -783,6 +1057,7 @@ const handlePrintAll = async () => {
                                     e.target.value
                                   )
                                 }
+                                disabled={isNatureCodeTemplateLoading}
                                 className="flex-1 rounded border border-gray-300 px-2 py-1 text-sm"
                                 placeholder="Question label"
                               />
@@ -794,6 +1069,7 @@ const handlePrintAll = async () => {
                                     e.target.value
                                   )
                                 }
+                                disabled={isNatureCodeTemplateLoading}
                                 className="rounded border border-gray-300 px-2 py-1 text-sm"
                               >
                                 <option value="1">
@@ -804,13 +1080,14 @@ const handlePrintAll = async () => {
                                 <option value="4">
                                   Not as Scripted
                                 </option>
-                                <option value="5">N/A</option>
+                                <option value="5">Not Applicable</option>
                                 <option value="6">Obvious</option>
                                 <option value="RC">Recorded Correctly</option>
                               </select>
                               <button
                                 type="button"
                                 onClick={() => handleDeleteQuestion(key)}
+                                disabled={isNatureCodeTemplateLoading}
                                 className="rounded bg-red-500 px-2 py-1 text-xs text-white transition-colors hover:bg-red-600"
                               >
                                 Delete
@@ -819,6 +1096,16 @@ const handlePrintAll = async () => {
                           )
                         )}
                       </div>
+                    </div>
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        onClick={handleCancelGradesEdit}
+                        disabled={isGradeSaving || isNatureCodeTemplateLoading}
+                        className={paginationButtonClassName}
+                      >
+                        Cancel
+                      </button>
                     </div>
                   </>
                 ) : (
@@ -829,14 +1116,19 @@ const handlePrintAll = async () => {
 
                     <div className="space-y-1">
                       {Object.entries(questionGrades).map(
-                        ([key, question]: [string, any]) => (
+                        ([key, question]) => {
+                          const typedQuestion = question as EditableQuestionGrade;
+                          const displayStatus = getDisplayStatus(typedQuestion);
+
+                          return (
                           <div key={key} className="flex justify-between text-sm">
-                            <span>{question.label}</span>
-                            <span className={getQuestionStatusClassName(question.status)}>
-                              {question.status}
+                            <span>{typedQuestion.label}</span>
+                            <span className={getQuestionStatusClassName(displayStatus)}>
+                              {displayStatus}
                             </span>
                           </div>
-                        )
+                          );
+                        }
                       )}
                     </div>
                   </>
@@ -897,7 +1189,7 @@ const handlePrintAll = async () => {
                   transcriptFile={currentTranscript}
                   audioFile={matchedAudio}
                   editable={isEditingTranscript}
-                  dispatcherName={activeDispatcher.name}
+                  dispatcherName={activeDispatcherName}
                 />
               </div>
             ) : (
