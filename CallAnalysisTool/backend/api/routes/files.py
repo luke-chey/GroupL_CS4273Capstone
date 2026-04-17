@@ -1,8 +1,11 @@
 import json
+import os
+import shutil
 from pathlib import Path
 from urllib.parse import unquote
 
 from flask import Blueprint, jsonify, request, send_from_directory
+from pathvalidate import sanitize_filepath, sanitize_filename
 
 files_bp = Blueprint('files', __name__)
 
@@ -140,8 +143,67 @@ def put_file(filename):
         if replacement_payload is None:
             return jsonify({'error': 'Invalid JSON body'}), 400
         
-        if "segments" not in replacement_payload:
-            return jsonify({"error": "Transcript must include 'segments'"}), 400
+        if description == "transcript":
+            if "segments" not in replacement_payload:
+                return jsonify({"error": "Transcript must include 'segments'"}), 400
+        elif description == "grades":
+            # Validate grades structure
+            required_fields = ["grades", "detected_nature_code"]
+            if not all(field in replacement_payload for field in required_fields):
+                return jsonify({"error": "Grades must include 'grades' and 'detected_nature_code'"}), 400
+            
+            # Check if nature code changed
+            new_nature_code = replacement_payload["detected_nature_code"]
+            if new_nature_code != nature:
+                # Need to rename the folder and all files
+                base_dir = Path(OUTPUT_DIR)
+                
+                # Sanitize new directory components
+                safe_agent = sanitize_filename(agent, replacement_text="-")
+                safe_new_folder = sanitize_filename(f"{date}_{time}_{new_nature_code}", replacement_text="-")
+                
+                # Build new directory path
+                new_record_dir = sanitize_filepath(base_dir / safe_agent / safe_new_folder, replacement_text="-")
+                new_record_dir = Path(new_record_dir)
+                
+                # Create new directory if it doesn't exist
+                new_record_dir.mkdir(parents=True, exist_ok=True)
+                
+                # Build new base filename
+                new_base_name = sanitize_filename(
+                    f"{agent}_{date}_{time}_{new_nature_code}",
+                    replacement_text="-"
+                )
+                
+                # Rename all files in the record
+                for file in record_dir.iterdir():
+                    if not file.is_file():
+                        continue
+                    
+                    filename_parts = file.name.split('_')
+                    if len(filename_parts) >= 5:
+                        # Replace nature code in filename
+                        filename_parts[3] = new_nature_code
+                        new_filename = '_'.join(filename_parts)
+                        
+                        # Sanitize new filename
+                        new_filename = sanitize_filename(new_filename, replacement_text="-")
+                        
+                        # Move file
+                        new_file_path = new_record_dir / new_filename
+                        shutil.move(str(file), str(new_file_path))
+                
+                # Remove old directory if empty
+                try:
+                    record_dir.rmdir()
+                except OSError:
+                    # Directory not empty, that's fine
+                    pass
+                
+                # Update paths for the grades file
+                record_dir = new_record_dir
+                filename = sanitize_filename(f"{new_base_name}_grades.json", replacement_text="-")
+                file_path = record_dir / filename
         
         with open(file_path, "w", encoding="utf-8") as f:
             json.dump(replacement_payload, f, indent=2, ensure_ascii=False)

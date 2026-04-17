@@ -170,6 +170,16 @@ const getQuestionStatusClassName = (status?: string): string => {
 const paginationButtonClassName =
   "inline-flex items-center justify-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 enabled:cursor-pointer";
 
+const GRADE_KEY = {
+  "1": "Asked Correctly",
+  "2": "Not Asked",
+  "3": "Asked Incorrectly",
+  "4": "Not As Scripted",
+  "5": "N/A",
+  "6": "Obvious",
+  "RC": "Recorded Correctly",
+};
+
 const printButtonClassName =
   "inline-flex items-center justify-center rounded-md border border-sky-300 bg-sky-100 px-4 py-2 text-sm font-medium text-sky-800 shadow-sm transition-colors hover:bg-sky-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 enabled:cursor-pointer";
 
@@ -203,6 +213,11 @@ const DispatcherDetails = ({
   const [isEditingTranscript, setIsEditingTranscript] = useState(false);
   const [transcriptSaveMessage, setTranscriptSaveMessage] = useState("");
   const [isTranscriptSaving, setIsTranscriptSaving] = useState(false);
+  const [isManualGrading, setIsManualGrading] = useState(false);
+  const [manualGradeNatureCode, setManualGradeNatureCode] = useState("");
+  const [manualGradeQuestions, setManualGradeQuestions] = useState<Record<string, any>>({});
+  const [manualGradeAnswers, setManualGradeAnswers] = useState<Record<string, string>>({});
+  const [availableNatureCodes, setAvailableNatureCodes] = useState<string[]>([]);
   const playerControllerRef = useRef<PlayerControllerHandle | null>(null);
   
 
@@ -220,6 +235,20 @@ const DispatcherDetails = ({
     const handler = () => loadLocalData();
     window.addEventListener("dispatchersUpdated", handler);
     return () => window.removeEventListener("dispatchersUpdated", handler);
+  }, []);
+
+  /* -------- Load nature codes -------- */
+  useEffect(() => {
+    const loadNatureCodes = async () => {
+      try {
+        const { fetchNatureCodes } = await import("@/lib/api");
+        const codes = await fetchNatureCodes();
+        setAvailableNatureCodes(codes);
+      } catch (error) {
+        console.error("Failed to load nature codes:", error);
+      }
+    };
+    loadNatureCodes();
   }, []);
 
   /* -------- Derived Data -------- */
@@ -331,6 +360,101 @@ const DispatcherDetails = ({
     }
   };
 
+  const handleManualGradeButtonClick = async () => {
+    if (!isManualGrading) {
+      // Start manual grading
+      if (!currentGrade) return;
+      
+      setManualGradeNatureCode(currentGrade.detected_nature_code || "");
+      setManualGradeAnswers({});
+      
+      // Load questions for current nature code
+      try {
+        const { fetchNatureCodeQuestions } = await import("@/lib/api");
+        const questions = await fetchNatureCodeQuestions(currentGrade.detected_nature_code || "Case Entry");
+        setManualGradeQuestions(questions);
+        
+        // Initialize answers from current grade
+        const answers: Record<string, string> = {};
+        Object.entries(currentGrade.grades || {}).forEach(([qid, grade]) => {
+          answers[qid] = (grade as any).code || "2";
+        });
+        setManualGradeAnswers(answers);
+      } catch (error) {
+        console.error("Failed to load questions:", error);
+        return;
+      }
+      
+      setIsManualGrading(true);
+      return;
+    }
+
+    // Save manual grading
+    if (!currentGrade || !currentRecord?.gradeFile) return;
+
+    try {
+      const { putBackendFile } = await import("@/lib/api");
+      
+      // Build updated grades object
+      const updatedGrades: Record<string, any> = {};
+      Object.entries(manualGradeQuestions).forEach(([qid, qdata]) => {
+        const code = manualGradeAnswers[qid] || "2";
+        updatedGrades[qid] = {
+          code,
+          label: (qdata as any).text,
+          status: GRADE_KEY[code as keyof typeof GRADE_KEY] || "Unknown",
+        };
+      });
+
+      // Recalculate percentage
+      const totalQuestions = Object.keys(updatedGrades).length;
+      let earnedPoints = 0;
+      Object.values(updatedGrades).forEach((grade: any) => {
+        if (["1", "6"].includes(grade.code)) earnedPoints += 1;
+        else if (grade.code === "4") earnedPoints += 0.5;
+      });
+      const percentage = totalQuestions > 0 ? (earnedPoints / totalQuestions) * 100 : 0;
+
+      const updatedGradeData = {
+        ...currentGrade,
+        detected_nature_code: manualGradeNatureCode,
+        grades: updatedGrades,
+        grade_percentage: Math.round(percentage),
+        total_questions: totalQuestions,
+        questions_asked_correctly: Object.values(updatedGrades).filter((g: any) => ["1", "6"].includes(g.code)).length,
+        questions_missed: totalQuestions - Object.values(updatedGrades).filter((g: any) => ["1", "6"].includes(g.code)).length,
+        timestamp: new Date().toISOString() + "Z",
+      };
+
+      await putBackendFile(currentRecord.gradeFile, updatedGradeData);
+      
+      // Reload dispatcher data
+      window.dispatchEvent(new Event("dispatchersUpdated"));
+      
+      setIsManualGrading(false);
+    } catch (error) {
+      console.error("Failed to save grades:", error);
+    }
+  };
+
+  const handleNatureCodeChange = async (newNatureCode: string) => {
+    setManualGradeNatureCode(newNatureCode);
+    
+    try {
+      const { fetchNatureCodeQuestions } = await import("@/lib/api");
+      const questions = await fetchNatureCodeQuestions(newNatureCode);
+      setManualGradeQuestions(questions);
+      
+      // Reset answers for new questions
+      const answers: Record<string, string> = {};
+      Object.keys(questions).forEach(qid => {
+        answers[qid] = "2"; // Default to "Not Asked"
+      });
+      setManualGradeAnswers(answers);
+    } catch (error) {
+      console.error("Failed to load questions for nature code:", error);
+    }
+  };
 
   const buildPrintRecord = async (transcriptFilename: string): Promise<PrintCallRecord | null> => {
   const grade = grades[transcriptFilename];
@@ -456,12 +580,50 @@ const handlePrintAll = async () => {
         {/* Transcript */}
         <Card>
           <CardHeader>
-            <CardTitle>Question Grades</CardTitle>
-            Nature Code: {getFileParts(currentTranscript).nature}
-            <CardDescription>{currentTranscript}</CardDescription>
+            <CardTitle>{isManualGrading ? "Manual Grading" : "Question Grades"}</CardTitle>
+            {isManualGrading ? (
+              <div className="space-y-2">
+                <label className="block text-sm font-medium">Nature Code:</label>
+                <select
+                  value={manualGradeNatureCode}
+                  onChange={(e) => handleNatureCodeChange(e.target.value)}
+                  className="w-full p-2 border border-gray-300 rounded"
+                >
+                  {availableNatureCodes.map(code => (
+                    <option key={code} value={code}>{code}</option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <>
+                Nature Code: {getFileParts(currentTranscript).nature}
+                <CardDescription>{currentTranscript}</CardDescription>
+              </>
+            )}
           </CardHeader>
           <CardContent>
-            {currentGrade ? (
+            {isManualGrading ? (
+              <div className="space-y-4 max-h-96 overflow-y-auto">
+                {Object.entries(manualGradeQuestions).map(([qid, qdata]) => (
+                  <div key={qid} className="border-b pb-2">
+                    <p className="text-sm font-medium mb-1">{(qdata as any).text}</p>
+                    <select
+                      value={manualGradeAnswers[qid] || "2"}
+                      onChange={(e) => setManualGradeAnswers(prev => ({ ...prev, [qid]: e.target.value }))}
+                      className="w-full p-1 border border-gray-300 rounded text-sm"
+                    >
+                      <option value="1">1 - Asked Correctly</option>
+                      <option value="2">2 - Not Asked</option>
+                      <option value="3">3 - Asked Incorrectly</option>
+                      <option value="4">4 - Not As Scripted</option>
+                      <option value="5">5 - N/A</option>
+                      <option value="6">6 - Obvious</option>
+                      <option value="RC">RC - Recorded Correctly</option>
+                    </select>
+                  </div>
+                ))}
+              </div>
+            ) : currentGrade ? (
               <div className="space-y-2">
                 <p className="text-blue-600">
                   {currentGrade.grade_percentage}%
@@ -496,7 +658,15 @@ const handlePrintAll = async () => {
           </CardHeader>
 
           <CardContent>              
-            <div className="mb-4 flex justify-end">
+            <div className="mb-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={handleManualGradeButtonClick}
+                disabled={!currentGrade}
+                className={paginationButtonClassName}
+              >
+                {isManualGrading ? "Save Grades" : "Manual Grade"}
+              </button>
               <button
                 type="button"
                 onClick={handleEditButtonClick}

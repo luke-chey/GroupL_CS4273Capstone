@@ -337,3 +337,41 @@ def get_record_details(name, record_name):
         import traceback
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
+
+@dispatchers_bp.route('/nature-codes', methods=['GET'])
+def get_nature_codes():
+    """
+    Returns a list of available nature codes for manual grading.
+    
+    **Returns:**
+    - `str[] nature_codes`
+    """
+    try:
+        from api.services.nature_codes import load_nature_codes
+        nature_codes = load_nature_codes()
+        # Split by "; " and return as array
+        codes = [code.strip() for code in nature_codes.split(";") if code.strip()]
+        return jsonify({"nature_codes": codes}), 200
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@dispatchers_bp.route('/nature-codes/<string:nature_code>/questions', methods=['GET'])
+def get_nature_code_questions(nature_code):
+    """
+    Returns questions for a specific nature code.
+    
+    **Returns:**
+    - `object questions` - Dict of question_id -> question data
+    """
+    try:
+        from api.services.nature_codes import load_nature_code_questions
+        questions = load_nature_code_questions(nature_code)
+        return jsonify({"questions": questions}), 200
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500

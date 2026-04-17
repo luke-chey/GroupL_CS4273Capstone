@@ -317,3 +317,13 @@ export async function putBackendFile<TResponse = unknown>(
 export function buildBackendFileUrl(filename: string): string {
   return `${getApiBaseUrl()}/api/files/${encodeURIComponent(filename)}`;
 }
+
+export async function fetchNatureCodes(): Promise<string[]> {
+  const response = await fetchJson<{nature_codes: string[]}>(`/api/nature-codes`);
+  return response.nature_codes;
+}
+
+export async function fetchNatureCodeQuestions(natureCode: string): Promise<Record<string, any>> {
+  const response = await fetchJson<{questions: Record<string, any>}>(`/api/nature-codes/${encodeURIComponent(natureCode)}/questions`);
+  return response.questions;
+}
