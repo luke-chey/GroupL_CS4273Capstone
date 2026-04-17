@@ -4,6 +4,7 @@ import whisperx
 import torch
 import gc
 from whisperx.diarize import DiarizationPipeline
+import inspect
 
 def in_docker():
     return os.path.exists("/.dockerenv")
@@ -134,8 +135,9 @@ def speaker_separation(audio_path, transcript_path, output_dir, dispatcher_name=
 
     # Diarizing audio
     print("Diarizing audio")
+    print("DiarizationPipeline signature: ", inspect.signature(DiarizationPipeline))
     if not in_docker():
-        diarize_model = DiarizationPipeline(use_auth_token=os.getenv('HF_TOKEN'), device=DEVICE)
+        diarize_model = DiarizationPipeline(token=os.getenv('HF_TOKEN'), device=DEVICE)
     else:
         diarize_model = DiarizationPipeline(device=DEVICE)
     diarize_segments = diarize_model(audio, min_speakers=2, max_speakers=2)

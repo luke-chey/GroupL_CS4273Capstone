@@ -143,65 +143,6 @@ def format_questions_for_prompt(questions_dict):
 
     return "\n".join(lines)
 
-def format_question_for_chat(question_id: str, question_data: Dict[str, Any]) -> str:
-    parts = [f"Question ID: {question_id}", f"Question Text: {question_data['text']}"]
-
-    if (question_id in IGNORE_LIST):
-        parts.append("[Question not related to transcript]: ALWAYS GRADE AS N/A (5)]")
-        return "\n".join(parts)
-
-    if question_data.get("parent"):
-        parts.append(f"Should follow question: {_format_parent_question_id(question_id, question_data['parent'])}")
-    if question_data.get("alternatives"):
-        parts.append(f"Allowed wording alternatives: {question_data['alternatives']}")
-    if question_data.get("condition"):
-        parts.append(f"Condition: {question_data['condition']}")
-    else:
-        parts.append("Condition: None. This question should always be asked.")
-    # if question_data.get("condition_type"):
-    #     parts.append(f"Condition type: {question_data['condition_type']}")
-    if question_data.get("age_min_f") or question_data.get("age_min_m"):
-        parts.append(
-            f"Minimum age context: female>{question_data.get('age_min_f')} male>{question_data.get('age_min_m')}"
-        )
-    # if question_data.get("clarification_allowed"):
-    #     parts.append(f"Clarification allowed: {question_data['clarification_allowed']}")
-    # if question_data.get("macros"):
-    #     parts.append(f"Macro context: {question_data['macros']}")
-    # if (
-    #     question_data["echo"].get("level")
-    #     or question_data["echo"].get("number")
-    #     or question_data["echo"].get("letter")
-    #     or question_data["echo"].get("response")
-    # ):
-    #     parts.append(
-    #         "ECHO context: "
-    #         f"level={question_data['echo'].get('level')} "
-    #         f"number={question_data['echo'].get('number')} "
-    #         f"letter={question_data['echo'].get('letter')} "
-    #         f"response={question_data['echo'].get('response')}"
-    #     )
-    if question_data.get("scenario"):
-        parts.append(f"Scenario: {question_data['scenario']}")
-    parts.append(
-        """Grade codes:
-        1 = Asked Correctly (Question asked and in the correct order)
-        2 = Not Asked (Conditions met to ask but question still ommitted)
-        3 = Asked Incorrectly (Question asked but wording is different)
-        4 = Not As Scripted (Question asked but out of order)
-        5 = Not applicable (Usually if some conditions are not met to ask)
-        6 = Obvious (Usually if mentioned by caller before dispatcher asked)\n""")
-    parts.append(
-        "Notes for grading:" \
-        "- Transcript speaker labels may be wrong, so if it looks like the dispatcher is talking to themself or not waiting for a proper response, take that into account. " \
-        "- Remember, you are assessing whether the dispatcher physically asked the questions and in the correct order. The order that questions are being provided to you is unrelated to whether or not the dispatcher followed protocol. Finally, very rarely can you say that something was 'mentioned previously' or 'implied' by context. " \
-        "- Something is usually only 'Obvious' if the caller themself specifically said it before the dispatcher had a chance to ask. " \
-        "- The questions are separated the way they are and use the wording that they do because they need to be asked distinctly and exactly, word-for-word.")
-    parts.append(
-        "\nReply using this exact structure: [X] reasoning text, where X is one of 1, 2, 3, 4, 5, or 6."
-    )
-    return "\n".join(parts)
-
 def main():
     if len(sys.argv) != 2:
         print("Usage: python text_handler.py <filepath.json>")
