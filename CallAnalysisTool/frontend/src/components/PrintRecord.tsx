@@ -1,5 +1,4 @@
 "use client";
-import React from "react";
 
 
 interface TranscriptSegment {
@@ -9,7 +8,7 @@ interface TranscriptSegment {
   end: number;
 }
 
-interface TranscriptData {
+export interface TranscriptData {
   segments?: TranscriptSegment[];
 }
 

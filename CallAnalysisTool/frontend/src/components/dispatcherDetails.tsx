@@ -10,7 +10,7 @@ import {
   CardContent,
 } from "@/components/ui/card";
 import PlayerController, { PlayerControllerHandle } from "./PlayerController/PlayerController";
-import exportRecord, { PrintCallRecord } from "./PrintRecord";
+import exportRecord, { PrintCallRecord, TranscriptData } from "./PrintRecord";
 import {
   fetchNatureCodeGradeTemplate,
   fetchNatureCodeOptions,
@@ -379,13 +379,15 @@ const DispatcherDetails = ({
     [batchPages, dispatcherMap]
   );
 
+  const currentDispatcherState = dispatcherMap.get(dispatcher.id) || dispatcher;
+
   const activePages = useMemo(() => {
     const inBatch =
       batchMode &&
       pagesFromBatch.some((p) => p.dispatcherId === dispatcher.id);
 
-    return inBatch ? pagesFromBatch : buildFallbackPages(dispatcher);
-  }, [batchMode, pagesFromBatch, dispatcher]);
+    return inBatch ? pagesFromBatch : buildFallbackPages(currentDispatcherState);
+  }, [batchMode, currentDispatcherState, dispatcher.id, pagesFromBatch]);
 
   useEffect(() => {
     if (!activePages.length) return setCurrentIndex(0);
@@ -700,11 +702,18 @@ const DispatcherDetails = ({
       }
 
       if (field === "grade_percentage") {
-        return { ...previous, grade_percentage: value };
+        const numericValue =
+          typeof value === "number" ? value : Number(value);
+        return {
+          ...previous,
+          grade_percentage: Number.isFinite(numericValue)
+            ? numericValue
+            : previous.grade_percentage,
+        };
       }
 
       if (field === "detected_nature_code") {
-        return { ...previous, detected_nature_code: value };
+        return { ...previous, detected_nature_code: String(value) };
       }
 
       if (field.startsWith("question_")) {
@@ -843,10 +852,10 @@ const DispatcherDetails = ({
   const qGrades = grade.grades || grade.per_question || {};
   const record = recordByTranscript.get(transcriptFilename);
 
-  let transcriptData: unknown = null;
+  let transcriptData: TranscriptData | null = null;
   try {
     const { fetchBackendFile } = await import("@/lib/api");
-    transcriptData = await fetchBackendFile<unknown>(transcriptFilename);
+    transcriptData = await fetchBackendFile<TranscriptData>(transcriptFilename);
   } catch {
     console.warn("Could not load transcript for print:", transcriptFilename);
   }
@@ -962,7 +971,13 @@ const handlePrintAll = async () => {
             <div className="min-w-0">
               <CardTitle>Question Grades</CardTitle>
               <div>Nature Code: {getFileParts(currentTranscript).nature}</div>
-              <CardDescription>{currentTranscript}</CardDescription>
+              <CardDescription>
+                {/* dumb workaround */}
+                {currentRecord?.gradeFile ||
+                  (currentTranscript
+                    ? currentTranscript.replace(/_transcript\.json$/i, "_grades.json")
+                    : "")}
+              </CardDescription>
             </div>
             <div className="flex flex-col items-end gap-2">
               <button
@@ -1152,6 +1167,7 @@ const handlePrintAll = async () => {
                   }`}
               </div>
               <CardDescription>{matchedAudio}</CardDescription>
+              <CardDescription>{currentTranscript}</CardDescription>
             </div>
             <div className="flex flex-col items-end gap-2">
               <button
@@ -1204,4 +1220,3 @@ const handlePrintAll = async () => {
 };
 
 export default DispatcherDetails;
-
