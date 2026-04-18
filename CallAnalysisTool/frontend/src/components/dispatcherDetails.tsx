@@ -50,6 +50,7 @@ interface EditableGradeData {
   grade_percentage: number;
   detected_nature_code: string;
   nature_code_name?: string;
+  nature_code_reasoning?: string;
   grades: Record<string, EditableQuestionGrade>;
 }
 
@@ -396,6 +397,12 @@ const DispatcherDetails = ({
     normalizeTextValue(
       gradeData?.detected_nature_code ?? currentGrade?.detected_nature_code ?? ""
     );
+  const natureCodeReasoning =
+    typeof gradeData?.nature_code_reasoning === "string"
+      ? gradeData.nature_code_reasoning
+      : typeof currentGrade?.nature_code_reasoning === "string"
+        ? currentGrade.nature_code_reasoning
+        : "";
   const hasDetectedNatureCodeOption = natureCodeOptions.some(
     (protocol) => protocol.id === detectedNatureCodeValue
   );
@@ -999,7 +1006,20 @@ const handlePrintAll = async () => {
           <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
             <div className="min-w-0">
               <CardTitle>Question Grades</CardTitle>
-              <div>Nature Code: {getFileParts(currentTranscript).nature}</div>
+              <details className="group mt-1">
+                <summary className="cursor-pointer list-none">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span
+                      aria-hidden="true"
+                      className="inline-block h-2.5 w-2.5 shrink-0 rotate-[-45deg] border-r-2 border-b-2 border-gray-400 transition-transform group-open:rotate-45"
+                    />
+                    <span>Nature Code: {getFileParts(currentTranscript).nature}</span>
+                  </div>
+                </summary>
+                <CardDescription className="ml-5 mt-1 whitespace-pre-line">
+                  {natureCodeReasoning || "No reasoning found."}
+                </CardDescription>
+              </details>
               <CardDescription>
                 {/* dumb workaround */}
                 {currentRecord?.gradeFile ||
@@ -1281,6 +1301,7 @@ const handlePrintAll = async () => {
 
       </div>
       <ProgressModal
+        title="Regrading File"
         oneFile={true}
         isOpen={isRegrading}
         progress={regradeProgress}

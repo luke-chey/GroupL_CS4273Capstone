@@ -20,6 +20,7 @@ export interface ApiResponse {
   grader_type: string;
   grade_percentage: number;
   detected_nature_code: string;
+  nature_code_reasoning?: string;
   total_questions: number;
   case_entry_questions: number;
   nature_code_questions: number;

@@ -353,6 +353,7 @@ const UploadFileContainer = () => {
         </button>
       </div>
       <ProgressModal
+        title={selectedFiles.length === 1 ? "Processing File" : "Processing Files"}
         oneFile={selectedFiles.length === 1}
         isOpen={isUploading}
         progress={progressPercentage}

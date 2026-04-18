@@ -144,7 +144,12 @@ def upload():
         print(f"Detected nature code: [{nature_code_id}] {nature_code_name}\nReasoning: {nature_code_reasoning}")
         
         # Get grades
-        response, grades_path = grade_transcript_file(nature_code_id, transcript_path, TEMP_PATH)
+        response, grades_path = grade_transcript_file(
+            nature_code_id,
+            transcript_path,
+            TEMP_PATH,
+            nature_code_reasoning=nature_code_reasoning,
+        )
 
         # Create destination folder and move everything there
         # Base output directory

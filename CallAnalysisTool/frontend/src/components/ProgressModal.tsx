@@ -3,6 +3,7 @@ import React from "react";
 import styles from "./ProgressModal.module.css";
 
 interface ProgressModalProps {
+  title: string;
   oneFile: boolean;
   isOpen: boolean;
   progress: number; // 0-100
@@ -13,6 +14,7 @@ interface ProgressModalProps {
 }
 
 const ProgressModal: React.FC<ProgressModalProps> = ({
+  title,
   oneFile,
   isOpen,
   progress,
@@ -26,7 +28,7 @@ const ProgressModal: React.FC<ProgressModalProps> = ({
   return (
     <div className={styles.modalOverlay}>
       <div className={styles.modalContent}>
-        <h2 className={styles.modalTitle}>Processing File(s)</h2>
+        <h2 className={styles.modalTitle}>{title}</h2>
         {showProgressBar && (
           <div className={styles.progressContainer}>
             <div className={styles.progressBarWrapper}>

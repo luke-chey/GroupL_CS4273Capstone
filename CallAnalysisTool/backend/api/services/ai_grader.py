@@ -173,6 +173,7 @@ def grade_transcript_file(
     nature_code_id: str,
     transcript_path: Path,
     output_path: Path,
+    nature_code_reasoning: str = "",
 ) -> Tuple[Dict[str, Any], Path]:
     """Grade a transcript JSON file and write grades.json to output_path."""
     with open(transcript_path, "r", encoding="utf-8") as f:
@@ -211,6 +212,7 @@ def grade_transcript_file(
             "id": str(nature_code_id),
             "name": nature_code_name,
         },
+        "nature_code_reasoning": nature_code_reasoning,
         "total_questions": total_questions,
         "case_entry_questions": case_entry_count,
         "nature_code_questions": nature_code_count,

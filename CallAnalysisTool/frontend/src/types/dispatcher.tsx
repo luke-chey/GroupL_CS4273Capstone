@@ -5,6 +5,7 @@ export interface FileGrade {
   grade_percentage: number;
   detected_nature_code?: string;
   nature_code_name?: string;
+  nature_code_reasoning?: string;
   grades?: {
     [questionId: string]: {
       code: string;

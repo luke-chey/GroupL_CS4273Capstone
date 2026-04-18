@@ -8,7 +8,8 @@ from api.services.ollama_handler import chat_ollama
 
 EMSQA_PATH = Path("data") / "EMSQA.csv"
 NATURE_CODES_MASTER_PATH = Path("data") / "nature_codes_master.json"
-NATURE_CODE_MAX_RETRIES = 3
+NATURE_CODE_MAX_RETRIES = 5
+FALLBACK_NATURE_CODE_ID = "0"
 
 def get_nature_codes_master():
     # Load nature_codes_master.json
@@ -79,6 +80,8 @@ def detect_nature_code(transcript_path):
 
     messages = [{"role": "user", "content": prompt}]
 
+    response = ""
+
     for attempt in range(NATURE_CODE_MAX_RETRIES):
         response = chat_ollama(messages)
         print(f"[OLLAMA]\n{response}\n")
@@ -110,7 +113,18 @@ def detect_nature_code(transcript_path):
             )
         print("=== RETRYING NATURE CODE DETECTION ===")
 
-    raise ValueError(
-        "Could not get a valid nature code response after "
-        f"{NATURE_CODE_MAX_RETRIES} attempts. Last response: {response}"
+    fallback_nature_code_name = nature_codes_master.get(
+        FALLBACK_NATURE_CODE_ID, {}
+    ).get("nature_code_name", "Case Entry")
+    fallback_reasoning = (
+        "Nature code detection failed after "
+        f"{NATURE_CODE_MAX_RETRIES} attempts, so the system fell back to "
+        f"[{FALLBACK_NATURE_CODE_ID}] {fallback_nature_code_name}. "
+        f"Last response: {response}"
     )
+    print(
+        "Could not get a valid nature code response after "
+        f"{NATURE_CODE_MAX_RETRIES} attempts. Falling back to "
+        f"[{FALLBACK_NATURE_CODE_ID}] {fallback_nature_code_name}."
+    )
+    return FALLBACK_NATURE_CODE_ID, fallback_nature_code_name, fallback_reasoning

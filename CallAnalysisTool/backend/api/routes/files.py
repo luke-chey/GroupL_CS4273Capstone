@@ -311,6 +311,10 @@ def put_file(filename):
             replacement_payload["timestamp"] = datetime.now().isoformat() + "Z"
 
             new_nature_code_name = get_nature_code_name(nature_code)
+            if new_nature_code_name and new_nature_code_name != nature:
+                replacement_payload["nature_code_reasoning"] = (
+                    "This Nature Code was manually selected before regrading.."
+                )
             rename_result = None
             if new_nature_code_name and new_nature_code_name != nature:
                 rename_result = rename_record_files(
