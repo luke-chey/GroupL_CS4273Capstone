@@ -1286,6 +1286,7 @@ const handlePrintAll = async () => {
         progress={regradeProgress}
         currentStep={regradeStep}
         elapsedTime={regradeElapsedTime}
+        showProgressBar={false}
       />
     </div>
   );

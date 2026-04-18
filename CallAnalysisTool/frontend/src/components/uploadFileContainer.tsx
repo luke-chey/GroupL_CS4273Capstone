@@ -353,12 +353,13 @@ const UploadFileContainer = () => {
         </button>
       </div>
       <ProgressModal
-        oneFile={selectedFiles.length==1}
+        oneFile={selectedFiles.length === 1}
         isOpen={isUploading}
         progress={progressPercentage}
         currentStep={uploadProgress}
         elapsedTime={totalElapsedTime}
         currentFileElapsedTime={currentFileElapsedTime}
+        showProgressBar={selectedFiles.length > 1}
       />
     </div>
   );

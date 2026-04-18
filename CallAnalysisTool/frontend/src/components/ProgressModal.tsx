@@ -9,6 +9,7 @@ interface ProgressModalProps {
   currentStep: string;
   elapsedTime?: string;
   currentFileElapsedTime?: string;
+  showProgressBar?: boolean;
 }
 
 const ProgressModal: React.FC<ProgressModalProps> = ({
@@ -18,6 +19,7 @@ const ProgressModal: React.FC<ProgressModalProps> = ({
   currentStep,
   elapsedTime,
   currentFileElapsedTime,
+  showProgressBar = true,
 }) => {
   if (!isOpen) return null;
 
@@ -25,15 +27,17 @@ const ProgressModal: React.FC<ProgressModalProps> = ({
     <div className={styles.modalOverlay}>
       <div className={styles.modalContent}>
         <h2 className={styles.modalTitle}>Processing File(s)</h2>
-        <div className={styles.progressContainer}>
-          <div className={styles.progressBarWrapper}>
-            <div
-              className={styles.progressBar}
-              style={{ width: `${progress}%` }}
-            />
+        {showProgressBar && (
+          <div className={styles.progressContainer}>
+            <div className={styles.progressBarWrapper}>
+              <div
+                className={styles.progressBar}
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+            <p className={styles.progressText}>{progress}%</p>
           </div>
-          <p className={styles.progressText}>{progress}%</p>
-        </div>
+        )}
         <p className={styles.currentStep}>{currentStep}</p>
         {!oneFile && (
           <p className={styles.currentStep}>
