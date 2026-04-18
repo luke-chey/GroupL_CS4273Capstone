@@ -12,10 +12,14 @@ import {
 import PlayerController, { PlayerControllerHandle } from "./PlayerController/PlayerController";
 import exportRecord, { PrintCallRecord, TranscriptData } from "./PrintRecord";
 import {
+  fetchDispatcherRecordDetails,
+  fetchGradeFile,
   fetchNatureCodeGradeTemplate,
   fetchNatureCodeOptions,
   putBackendFile,
+  regradeRecord,
 } from "@/lib/api";
+import ProgressModal from "./ProgressModal";
 
 /* =========================
   Types
@@ -57,6 +61,12 @@ interface GradeSaveResponse {
   filename?: string;
   record_dir?: string;
   renamed_files?: Record<string, string>;
+}
+
+interface PersistedGradeResult {
+  response: GradeSaveResponse;
+  savedPayload: FileGrade;
+  transcriptFilename: string;
 }
 
 type IdNameLike = {
@@ -214,6 +224,9 @@ const paginationButtonClassName =
 const printButtonClassName =
   "inline-flex items-center justify-center rounded-md border border-sky-300 bg-sky-100 px-4 py-2 text-sm font-medium text-sky-800 shadow-sm transition-colors hover:bg-sky-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 enabled:cursor-pointer";
 
+const regradeButtonClassName =
+  "inline-flex items-center justify-center rounded-md border border-green-300 bg-green-100 px-4 py-2 text-sm font-medium text-green-800 shadow-sm transition-colors hover:bg-green-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 enabled:cursor-pointer";
+
 const formatDateRangePart = (dateValue?: string): string | null => {
   if (!dateValue) {
     return null;
@@ -225,6 +238,25 @@ const formatDateRangePart = (dateValue?: string): string | null => {
   }
 
   return `${Number(month)}/${Number(day)}/${year}`;
+};
+
+const formatElapsedTime = (ms: number | null) => {
+  if (!ms || ms < 0) return "00:00";
+
+  const totalSeconds = Math.floor(ms / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (hours > 0) {
+    return `${hours}:${minutes.toString().padStart(2, "0")}:${seconds
+      .toString()
+      .padStart(2, "0")}`;
+  }
+
+  return `${minutes.toString().padStart(2, "0")}:${seconds
+    .toString()
+    .padStart(2, "0")}`;
 };
 
 const cloneGradeData = (
@@ -312,6 +344,19 @@ const renameGradeMap = (
   return nextGrades;
 };
 
+const getRecordNameFromOutputDestination = (outputDestination?: string): string => {
+  if (!outputDestination) {
+    return "";
+  }
+
+  const pathParts = outputDestination
+    .replace(/\\/g, "/")
+    .split("/")
+    .filter(Boolean);
+
+  return pathParts[pathParts.length - 1] || "";
+};
+
 /* =========================
    Component
 ========================= */
@@ -341,6 +386,11 @@ const DispatcherDetails = ({
   const [isEditingTranscript, setIsEditingTranscript] = useState(false);
   const [transcriptSaveMessage, setTranscriptSaveMessage] = useState("");
   const [isTranscriptSaving, setIsTranscriptSaving] = useState(false);
+  const [isRegrading, setIsRegrading] = useState(false);
+  const [regradeProgress, setRegradeProgress] = useState(0);
+  const [regradeStep, setRegradeStep] = useState("");
+  const [regradeStartedAt, setRegradeStartedAt] = useState<number | null>(null);
+  const [regradeElapsedNow, setRegradeElapsedNow] = useState<number>(Date.now());
   const playerControllerRef = useRef<PlayerControllerHandle | null>(null);
   
 
@@ -359,6 +409,16 @@ const DispatcherDetails = ({
     window.addEventListener("dispatchersUpdated", handler);
     return () => window.removeEventListener("dispatchersUpdated", handler);
   }, []);
+
+  useEffect(() => {
+    if (!isRegrading) return;
+
+    const intervalId = window.setInterval(() => {
+      setRegradeElapsedNow(Date.now());
+    }, 1000);
+
+    return () => window.clearInterval(intervalId);
+  }, [isRegrading]);
 
   /* -------- Derived Data -------- */
 
@@ -438,6 +498,9 @@ const DispatcherDetails = ({
     ? recordByTranscript.get(currentTranscript)
     : undefined;
   const matchedAudio = currentRecord?.audioFile;
+  const regradeElapsedTime = formatElapsedTime(
+    regradeStartedAt ? regradeElapsedNow - regradeStartedAt : null
+  );
 
   const computedOverallGrade = calculateOverallGrade(transcripts, effectiveGrades);
   const overallGrade = overallGradeOverride ?? computedOverallGrade;
@@ -460,6 +523,241 @@ const DispatcherDetails = ({
   const backHref = backQuery.toString()
     ? `/records?${backQuery.toString()}`
     : "/records";
+
+  const applySavedGradeState = (
+    savedPayload: FileGrade,
+    renamedFiles: Record<string, string>,
+    targetTranscript: string
+  ) => {
+    setGradeOverrides((previous) => ({
+      ...Object.fromEntries(
+        Object.entries(previous).map(([filename, grade]) => [
+          renamedFiles[filename] || filename,
+          grade,
+        ])
+      ),
+      [targetTranscript]: savedPayload,
+    }));
+
+    const storedDispatchers = parseStoredDispatchers(
+      localStorage.getItem("dispatchers")
+    ).map((storedDispatcher) => {
+      if (storedDispatcher.id !== activeDispatcher.id) {
+        return storedDispatcher;
+      }
+
+      return {
+        ...storedDispatcher,
+        files: storedDispatcher.files
+          ? {
+              transcriptFiles: renameFileList(
+                storedDispatcher.files.transcriptFiles,
+                renamedFiles
+              ),
+              audioFiles: renameFileList(
+                storedDispatcher.files.audioFiles,
+                renamedFiles
+              ),
+            }
+          : storedDispatcher.files,
+        records: (storedDispatcher.records || []).map((record) =>
+          renameRecordFileReferences(record, renamedFiles)
+        ),
+        grades: {
+          ...renameGradeMap(storedDispatcher.grades, renamedFiles),
+          [targetTranscript]: savedPayload,
+        },
+      };
+    });
+
+    localStorage.setItem("dispatchers", JSON.stringify(storedDispatchers));
+    setDispatchers(storedDispatchers);
+
+    const storedBatchPages = parseStoredBatchPages(
+      localStorage.getItem("latestUploadBatch")
+    );
+    const nextBatchPages = storedBatchPages.map((page) => ({
+      ...page,
+      transcriptFilename:
+        renamedFiles[page.transcriptFilename] || page.transcriptFilename,
+    }));
+    localStorage.setItem(
+      "latestUploadBatch",
+      JSON.stringify({ pages: nextBatchPages })
+    );
+    setBatchPages(nextBatchPages);
+  };
+
+  const persistCurrentGrades = async (
+    options?: { showMessage?: boolean; closeEditor?: boolean }
+  ): Promise<PersistedGradeResult> => {
+    if (!currentTranscript || !currentGrade || !gradeData) {
+      throw new Error("No current grade is available to save.");
+    }
+
+    const gradeFilename =
+      currentRecord?.gradeFile ||
+      currentTranscript.replace(/_transcript\.json$/i, "_grades.json");
+    const nextQuestions = gradeData.grades || questionGrades;
+    const replacementPayload = {
+      ...currentGrade,
+      ...gradeData,
+      grades: nextQuestions,
+      ...(currentGrade?.per_question ? { per_question: nextQuestions } : {}),
+    };
+
+    const response = await putBackendFile<GradeSaveResponse>(
+      gradeFilename,
+      replacementPayload
+    );
+    const savedGradePercentage =
+      response.new_grade ?? replacementPayload.grade_percentage;
+    const renamedFiles = response.renamed_files || {};
+    const nextTranscript = renamedFiles[currentTranscript] || currentTranscript;
+    const gradedFilesCount = transcripts.filter(
+      (transcriptFilename) => effectiveGrades[transcriptFilename]
+    ).length;
+    const previousOverallGrade = overallGrade ?? 0;
+    const previousCurrentGrade = Number(currentGrade.grade_percentage || 0);
+    const nextOverallGrade =
+      gradedFilesCount <= 1
+        ? savedGradePercentage
+        : (
+            (previousOverallGrade * gradedFilesCount -
+              previousCurrentGrade +
+              savedGradePercentage) /
+            gradedFilesCount
+          );
+    const savedPayload: FileGrade = {
+      ...replacementPayload,
+      grade_percentage: savedGradePercentage,
+    };
+
+    applySavedGradeState(savedPayload, renamedFiles, nextTranscript);
+    setOverallGradeOverride(nextOverallGrade);
+    setGradeData((previous) =>
+      previous
+        ? {
+            ...previous,
+            grade_percentage: savedGradePercentage,
+          }
+        : previous
+    );
+    setOriginalGradeData((previous) =>
+      previous
+        ? {
+            ...previous,
+            grade_percentage: savedGradePercentage,
+          }
+        : previous
+    );
+
+    if (options?.showMessage ?? true) {
+      setGradeSaveMessage("Grades saved.");
+    }
+
+    if (options?.closeEditor ?? true) {
+      setIsEditingGrades(false);
+    }
+
+    return {
+      response,
+      savedPayload,
+      transcriptFilename: nextTranscript,
+    };
+  };
+
+  const refreshRecordState = async (recordName: string) => {
+    const refreshedRecord = await fetchDispatcherRecordDetails(
+      activeDispatcher.id,
+      recordName
+    );
+
+    if (!refreshedRecord.transcriptFile || !refreshedRecord.gradeFile) {
+      throw new Error("Refreshed record is missing transcript or grade file.");
+    }
+
+    const refreshedTranscriptFile = refreshedRecord.transcriptFile;
+    const refreshedGrade = await fetchGradeFile(refreshedRecord.gradeFile);
+    const previousRecordName = currentRecord?.name;
+    const previousTranscript = currentTranscript;
+
+    const storedDispatchers = parseStoredDispatchers(
+      localStorage.getItem("dispatchers")
+    ).map((storedDispatcher) => {
+      if (storedDispatcher.id !== activeDispatcher.id) {
+        return storedDispatcher;
+      }
+
+      const nextRecords = (storedDispatcher.records || []).map((record) => {
+        if (
+          record.name === previousRecordName ||
+          record.transcriptFile === previousTranscript
+        ) {
+          return refreshedRecord;
+        }
+
+        return record;
+      });
+
+      const nextTranscriptFiles = nextRecords
+        .map((record) => record.transcriptFile)
+        .filter((file): file is string => Boolean(file));
+      const nextAudioFiles = nextRecords
+        .map((record) => record.audioFile)
+        .filter((file): file is string => Boolean(file));
+      const nextGrades = { ...(storedDispatcher.grades || {}) };
+
+      if (previousTranscript && previousTranscript !== refreshedRecord.transcriptFile) {
+        delete nextGrades[previousTranscript];
+      }
+
+      nextGrades[refreshedTranscriptFile] = refreshedGrade;
+
+      return {
+        ...storedDispatcher,
+        overallGrade: calculateOverallGrade(nextTranscriptFiles, nextGrades) ?? 0,
+        records: nextRecords,
+        files: {
+          transcriptFiles: nextTranscriptFiles,
+          audioFiles: nextAudioFiles,
+        },
+        grades: nextGrades,
+      };
+    });
+
+    localStorage.setItem("dispatchers", JSON.stringify(storedDispatchers));
+    setDispatchers(storedDispatchers);
+    setGradeOverrides((previous) => {
+      const nextOverrides = { ...previous };
+      if (previousTranscript && previousTranscript !== refreshedRecord.transcriptFile) {
+        delete nextOverrides[previousTranscript];
+      }
+      nextOverrides[refreshedTranscriptFile] = refreshedGrade;
+      return nextOverrides;
+    });
+
+    const storedBatchPages = parseStoredBatchPages(
+      localStorage.getItem("latestUploadBatch")
+    );
+    const nextBatchPages = storedBatchPages.map((page) => {
+      if (page.transcriptFilename === previousTranscript && refreshedRecord.transcriptFile) {
+        return {
+          ...page,
+          transcriptFilename: refreshedRecord.transcriptFile,
+        };
+      }
+
+      return page;
+    });
+    localStorage.setItem(
+      "latestUploadBatch",
+      JSON.stringify({ pages: nextBatchPages })
+    );
+    setBatchPages(nextBatchPages);
+    setOverallGradeOverride(null);
+    setGradeSaveMessage("Regrade complete.");
+  };
 
   const handleEditButtonClick = async () => {
     if (!isEditingTranscript) {
@@ -499,129 +797,77 @@ const DispatcherDetails = ({
       return;
     }
 
-    const gradeFilename =
-      currentRecord?.gradeFile ||
-      currentTranscript.replace(/_transcript\.json$/i, "_grades.json");
-    const nextQuestions = gradeData.grades || questionGrades;
-    const replacementPayload = {
-      ...currentGrade,
-      ...gradeData,
-      grades: nextQuestions,
-      ...(currentGrade?.per_question ? { per_question: nextQuestions } : {}),
-    };
-
     setIsGradeSaving(true);
     setGradeSaveMessage("");
 
     try {
-      const response = await putBackendFile<GradeSaveResponse>(
-        gradeFilename,
-        replacementPayload
-      );
-      const savedGradePercentage =
-        response.new_grade ?? replacementPayload.grade_percentage;
-      const renamedFiles = response.renamed_files || {};
-      const nextTranscript = renamedFiles[currentTranscript] || currentTranscript;
-      const gradedFilesCount = transcripts.filter(
-        (transcriptFilename) => effectiveGrades[transcriptFilename]
-      ).length;
-      const previousOverallGrade = overallGrade ?? 0;
-      const previousCurrentGrade = Number(currentGrade.grade_percentage || 0);
-      const nextOverallGrade =
-        gradedFilesCount <= 1
-          ? savedGradePercentage
-          : (
-              (previousOverallGrade * gradedFilesCount -
-                previousCurrentGrade +
-                savedGradePercentage) /
-              gradedFilesCount
-            );
-      const savedPayload = {
-        ...replacementPayload,
-        grade_percentage: savedGradePercentage,
-      };
-      setGradeOverrides((previous) => ({
-        ...Object.fromEntries(
-          Object.entries(previous).map(([filename, grade]) => [
-            renamedFiles[filename] || filename,
-            grade,
-          ])
-        ),
-        [nextTranscript]: savedPayload,
-      }));
-
-      const storedDispatchers = parseStoredDispatchers(
-        localStorage.getItem("dispatchers")
-      ).map((storedDispatcher) => {
-        if (storedDispatcher.id !== activeDispatcher.id) {
-          return storedDispatcher;
-        }
-
-        return {
-          ...storedDispatcher,
-          files: storedDispatcher.files
-            ? {
-                transcriptFiles: renameFileList(
-                  storedDispatcher.files.transcriptFiles,
-                  renamedFiles
-                ),
-                audioFiles: renameFileList(
-                  storedDispatcher.files.audioFiles,
-                  renamedFiles
-                ),
-              }
-            : storedDispatcher.files,
-          records: (storedDispatcher.records || []).map((record) =>
-            renameRecordFileReferences(record, renamedFiles)
-          ),
-          grades: {
-            ...renameGradeMap(storedDispatcher.grades, renamedFiles),
-            [nextTranscript]: savedPayload,
-          },
-        };
+      await persistCurrentGrades({
+        showMessage: true,
+        closeEditor: true,
       });
-
-      localStorage.setItem("dispatchers", JSON.stringify(storedDispatchers));
-      setDispatchers(storedDispatchers);
-
-      const storedBatchPages = parseStoredBatchPages(
-        localStorage.getItem("latestUploadBatch")
-      );
-      const nextBatchPages = storedBatchPages.map((page) => ({
-        ...page,
-        transcriptFilename:
-          renamedFiles[page.transcriptFilename] || page.transcriptFilename,
-      }));
-      localStorage.setItem(
-        "latestUploadBatch",
-        JSON.stringify({ pages: nextBatchPages })
-      );
-      setBatchPages(nextBatchPages);
-
-      setOverallGradeOverride(nextOverallGrade);
-      setGradeData((previous) =>
-        previous
-          ? {
-              ...previous,
-              grade_percentage: savedGradePercentage,
-            }
-          : previous
-      );
-      setOriginalGradeData((previous) =>
-        previous
-          ? {
-              ...previous,
-              grade_percentage: savedGradePercentage,
-            }
-          : previous
-      );
-      setGradeSaveMessage("Grades saved.");
-      setIsEditingGrades(false);
     } catch (error) {
       console.error("Error saving grades:", error);
       setGradeSaveMessage("Failed to save grades.");
     } finally {
       setIsGradeSaving(false);
+    }
+  };
+
+  const handleRegrade = async () => {
+    if (!currentTranscript || !currentRecord?.name || !gradeData) {
+      setGradeSaveMessage("No record is available to regrade.");
+      return;
+    }
+
+    setIsRegrading(true);
+    setRegradeProgress(10);
+    setRegradeStep("Saving transcript...");
+    const startedAt = Date.now();
+    setRegradeStartedAt(startedAt);
+    setRegradeElapsedNow(startedAt);
+    setGradeSaveMessage("");
+    setTranscriptSaveMessage("");
+
+    try {
+      const transcriptPayload = playerControllerRef.current?.getTranscriptData();
+      if (transcriptPayload) {
+        await putBackendFile(currentTranscript, transcriptPayload);
+      }
+
+      setRegradeProgress(30);
+      setRegradeStep("Saving grades...");
+      const saveResult = await persistCurrentGrades({
+        showMessage: false,
+        closeEditor: true,
+      });
+
+      const recordName =
+        getRecordNameFromOutputDestination(saveResult.response.record_dir) ||
+        currentRecord.name;
+
+      setRegradeProgress(60);
+      setRegradeStep("Regrading call...");
+      const regradeResponse = await regradeRecord(activeDispatcher.id, recordName);
+
+      setRegradeProgress(85);
+      setRegradeStep("Refreshing record...");
+      const refreshedRecordName =
+        getRecordNameFromOutputDestination(regradeResponse.outputDestination) ||
+        recordName;
+      await refreshRecordState(refreshedRecordName);
+
+      setRegradeProgress(100);
+      setRegradeStep("Regrade complete.");
+    } catch (error) {
+      console.error("Error regrading record:", error);
+      setGradeSaveMessage("Failed to regrade call.");
+    } finally {
+      window.setTimeout(() => {
+        setIsRegrading(false);
+        setRegradeProgress(0);
+        setRegradeStep("");
+        setRegradeStartedAt(null);
+      }, 400);
     }
   };
 
@@ -1125,9 +1371,24 @@ const handlePrintAll = async () => {
                   </>
                 ) : (
                   <>
-                    <p className="text-blue-600">
-                      {currentGrade.grade_percentage}%
-                    </p>
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-blue-600">
+                        Grade: {currentGrade.grade_percentage}%
+                      </p>
+                      <div className="flex items-center gap-3">
+                        <p className="text-sm text-gray-500">
+                          Re-run AI grading using the current nature code and transcript
+                        </p>
+                        <button
+                          type="button"
+                          onClick={handleRegrade}
+                          disabled={isRegrading || isGradeSaving || isTranscriptSaving}
+                          className={regradeButtonClassName}
+                        >
+                          {isRegrading ? "Regrading..." : "Regrade"}
+                        </button>
+                      </div>
+                    </div>
 
                     <div className="space-y-1">
                       {Object.entries(questionGrades).map(
@@ -1215,6 +1476,13 @@ const handlePrintAll = async () => {
         </Card>
 
       </div>
+      <ProgressModal
+        oneFile={true}
+        isOpen={isRegrading}
+        progress={regradeProgress}
+        currentStep={regradeStep}
+        elapsedTime={regradeElapsedTime}
+      />
     </div>
   );
 };

@@ -72,6 +72,13 @@ export interface NatureCodeGradeTemplate {
   };
 }
 
+export interface RegradeResponse {
+  outputDestination: string;
+  dispatcherName: string;
+  grades: ApiResponse;
+  renamed_files?: Record<string, string>;
+}
+
 interface DispatcherSummaryResponse {
   stationGrade?: number | null;
   dispatchers?: Array<{
@@ -333,6 +340,25 @@ export async function putBackendFile<TResponse = unknown>(
         "Content-Type": "application/json",
       },
       body: JSON.stringify(data),
+    }
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => response.statusText);
+    throw new Error(`API error (${response.status}): ${errorText || response.statusText}`);
+  }
+
+  return response.json();
+}
+
+export async function regradeRecord(
+  dispatcherName: string,
+  recordName: string
+): Promise<RegradeResponse> {
+  const response = await fetch(
+    `${getApiBaseUrl()}/api/regrade/${encodeURIComponent(dispatcherName)}/${encodeURIComponent(recordName)}`,
+    {
+      method: "POST",
     }
   );
 
