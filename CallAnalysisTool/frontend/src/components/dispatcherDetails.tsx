@@ -1,7 +1,7 @@
 "use client";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Dispatcher, DispatcherRecord, FileGrade, FileParts } from "@/types/dispatcher";
+import { Dispatcher, DispatcherRecord, FileParts } from "@/types/dispatcher";
 import {
   Card,
   CardHeader,
@@ -27,19 +27,16 @@ import ProgressModal from "./ProgressModal";
 
 interface DispatcherDetailsProps {
   dispatcher: Dispatcher;
-  batchMode?: boolean;
+  onDispatcherChange: React.Dispatch<React.SetStateAction<Dispatcher | null>>;
+  initialRecordName?: string;
   startDate?: string;
   endDate?: string;
 }
 
-interface BatchPage {
+interface DispatcherPageEntry {
   dispatcherId: string;
   transcriptFilename: string;
   uploadOrder: number;
-}
-
-interface StoredBatchData {
-  pages?: BatchPage[];
 }
 
 interface EditableQuestionGrade {
@@ -65,7 +62,6 @@ interface GradeSaveResponse {
 
 interface PersistedGradeResult {
   response: GradeSaveResponse;
-  savedPayload: FileGrade;
   transcriptFilename: string;
 }
 
@@ -129,24 +125,7 @@ const getFileParts = (filename: string | undefined): FileParts => {
   } as FileParts;
 }
 
-const parseStoredDispatchers = (raw: string | null): Dispatcher[] => {
-  try {
-    return raw ? (JSON.parse(raw) as Dispatcher[]) : [];
-  } catch {
-    return [];
-  }
-};
-
-const parseStoredBatchPages = (raw: string | null): BatchPage[] => {
-  try {
-    const parsed = raw ? (JSON.parse(raw) as StoredBatchData) : null;
-    return Array.isArray(parsed?.pages) ? parsed.pages : [];
-  } catch {
-    return [];
-  }
-};
-
-const buildFallbackPages = (dispatcher: Dispatcher): BatchPage[] => {
+const buildFallbackPages = (dispatcher: Dispatcher): DispatcherPageEntry[] => {
   const records = dispatcher.records || [];
   const grades = dispatcher.grades || {};
 
@@ -313,36 +292,6 @@ const getDisplayStatus = (question: EditableQuestionGrade | undefined): string =
   return GRADE_KEY[normalizeGradeCode(question.code)] || "";
 };
 
-const renameRecordFileReferences = (
-  record: DispatcherRecord,
-  renamedFiles: Record<string, string>
-): DispatcherRecord => ({
-  ...record,
-  audioFile: record.audioFile ? (renamedFiles[record.audioFile] || record.audioFile) : record.audioFile,
-  cdrFile: record.cdrFile ? (renamedFiles[record.cdrFile] || record.cdrFile) : record.cdrFile,
-  transcriptFile: record.transcriptFile
-    ? (renamedFiles[record.transcriptFile] || record.transcriptFile)
-    : record.transcriptFile,
-  gradeFile: record.gradeFile ? (renamedFiles[record.gradeFile] || record.gradeFile) : record.gradeFile,
-});
-
-const renameFileList = (
-  files: string[] | undefined,
-  renamedFiles: Record<string, string>
-): string[] => (files || []).map((file) => renamedFiles[file] || file);
-
-const renameGradeMap = (
-  grades: Dispatcher["grades"] | undefined,
-  renamedFiles: Record<string, string>
-): Dispatcher["grades"] => {
-  const nextGrades: NonNullable<Dispatcher["grades"]> = {};
-
-  Object.entries(grades || {}).forEach(([filename, grade]) => {
-    nextGrades[renamedFiles[filename] || filename] = grade;
-  });
-
-  return nextGrades;
-};
 
 const getRecordNameFromOutputDestination = (outputDestination?: string): string => {
   if (!outputDestination) {
@@ -363,16 +312,13 @@ const getRecordNameFromOutputDestination = (outputDestination?: string): string 
 
 const DispatcherDetails = ({
   dispatcher,
-  batchMode = false,
+  onDispatcherChange,
+  initialRecordName,
   startDate,
   endDate,
 }: DispatcherDetailsProps) => {
   /* -------- State -------- */
-  const [dispatchers, setDispatchers] = useState<Dispatcher[]>([]);
-  const [batchPages, setBatchPages] = useState<BatchPage[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [gradeOverrides, setGradeOverrides] = useState<Record<string, FileGrade>>({});
-  const [overallGradeOverride, setOverallGradeOverride] = useState<number | null>(null);
   const [isEditingGrades, setIsEditingGrades] = useState(false);
   const [gradeData, setGradeData] = useState<EditableGradeData | null>(null);
   const [originalGradeData, setOriginalGradeData] = useState<EditableGradeData | null>(null);
@@ -392,23 +338,6 @@ const DispatcherDetails = ({
   const [regradeStartedAt, setRegradeStartedAt] = useState<number | null>(null);
   const [regradeElapsedNow, setRegradeElapsedNow] = useState<number>(Date.now());
   const playerControllerRef = useRef<PlayerControllerHandle | null>(null);
-  
-
-
-  /* -------- Load localStorage -------- */
-  const loadLocalData = () => {
-    setDispatchers(parseStoredDispatchers(localStorage.getItem("dispatchers")));
-    setBatchPages(
-      parseStoredBatchPages(localStorage.getItem("latestUploadBatch"))
-    );
-  };
-
-  useEffect(() => {
-    loadLocalData();
-    const handler = () => loadLocalData();
-    window.addEventListener("dispatchersUpdated", handler);
-    return () => window.removeEventListener("dispatchersUpdated", handler);
-  }, []);
 
   useEffect(() => {
     if (!isRegrading) return;
@@ -421,57 +350,35 @@ const DispatcherDetails = ({
   }, [isRegrading]);
 
   /* -------- Derived Data -------- */
-
-  const dispatcherMap = useMemo(() => {
-    const map = new Map<string, Dispatcher>();
-    map.set(dispatcher.id, dispatcher);
-    dispatchers.forEach((storedDispatcher) => {
-      map.set(storedDispatcher.id, storedDispatcher);
-    });
-    return map;
-  }, [dispatchers, dispatcher]);
-
-  const pagesFromBatch = useMemo(
-    () =>
-      batchPages.filter((p) =>
-        dispatcherMap.get(p.dispatcherId)?.grades?.[p.transcriptFilename]
-      ),
-    [batchPages, dispatcherMap]
+  const activePages = useMemo(
+    () => buildFallbackPages(dispatcher),
+    [dispatcher]
   );
-
-  const currentDispatcherState = dispatcherMap.get(dispatcher.id) || dispatcher;
-
-  const activePages = useMemo(() => {
-    const inBatch =
-      batchMode &&
-      pagesFromBatch.some((p) => p.dispatcherId === dispatcher.id);
-
-    return inBatch ? pagesFromBatch : buildFallbackPages(currentDispatcherState);
-  }, [batchMode, currentDispatcherState, dispatcher.id, pagesFromBatch]);
 
   useEffect(() => {
     if (!activePages.length) return setCurrentIndex(0);
 
-    const idx = activePages.findIndex(
-      (p) => p.dispatcherId === dispatcher.id
-    );
+    if (!initialRecordName) {
+      setCurrentIndex(0);
+      return;
+    }
+
+    const idx = activePages.findIndex((page) => {
+      const record = dispatcher.records?.find(
+        (candidate) => candidate.transcriptFile === page.transcriptFilename
+      );
+      return record?.name === initialRecordName;
+    });
 
     setCurrentIndex(idx >= 0 ? idx : 0);
-  }, [dispatcher.id, activePages]);
+  }, [activePages, dispatcher.records, initialRecordName]);
 
   const safeIndex = Math.min(currentIndex, activePages.length - 1);
   const currentPage = activePages[safeIndex];
-
-  const activeDispatcher =
-    dispatcherMap.get(currentPage?.dispatcherId || "") || dispatcher;
-
-  const records = activeDispatcher.records || [];
-  const transcripts = activeDispatcher.files?.transcriptFiles || [];
-  const grades = activeDispatcher.grades || {};
-  const effectiveGrades = {
-    ...grades,
-    ...gradeOverrides,
-  };
+  const activeDispatcher = dispatcher;
+  const records = dispatcher.records || [];
+  const transcripts = dispatcher.files?.transcriptFiles || [];
+  const grades = dispatcher.grades || {};
   const recordByTranscript = new Map<string, DispatcherRecord>(
     records
       .filter((record): record is DispatcherRecord & { transcriptFile: string } =>
@@ -482,7 +389,7 @@ const DispatcherDetails = ({
 
   const currentTranscript = currentPage?.transcriptFilename;
   const currentGrade = currentTranscript
-    ? effectiveGrades[currentTranscript]
+    ? grades[currentTranscript]
     : undefined;
   const questionGrades = currentGrade?.grades || currentGrade?.per_question || {};
   const detectedNatureCodeValue =
@@ -502,8 +409,7 @@ const DispatcherDetails = ({
     regradeStartedAt ? regradeElapsedNow - regradeStartedAt : null
   );
 
-  const computedOverallGrade = calculateOverallGrade(transcripts, effectiveGrades);
-  const overallGrade = overallGradeOverride ?? computedOverallGrade;
+  const overallGrade = calculateOverallGrade(transcripts, grades);
   const formattedStartDate = formatDateRangePart(startDate);
   const formattedEndDate = formatDateRangePart(endDate);
   const headerTitle =
@@ -524,72 +430,12 @@ const DispatcherDetails = ({
     ? `/records?${backQuery.toString()}`
     : "/records";
 
-  const applySavedGradeState = (
-    savedPayload: FileGrade,
-    renamedFiles: Record<string, string>,
-    targetTranscript: string
-  ) => {
-    setGradeOverrides((previous) => ({
-      ...Object.fromEntries(
-        Object.entries(previous).map(([filename, grade]) => [
-          renamedFiles[filename] || filename,
-          grade,
-        ])
-      ),
-      [targetTranscript]: savedPayload,
-    }));
-
-    const storedDispatchers = parseStoredDispatchers(
-      localStorage.getItem("dispatchers")
-    ).map((storedDispatcher) => {
-      if (storedDispatcher.id !== activeDispatcher.id) {
-        return storedDispatcher;
-      }
-
-      return {
-        ...storedDispatcher,
-        files: storedDispatcher.files
-          ? {
-              transcriptFiles: renameFileList(
-                storedDispatcher.files.transcriptFiles,
-                renamedFiles
-              ),
-              audioFiles: renameFileList(
-                storedDispatcher.files.audioFiles,
-                renamedFiles
-              ),
-            }
-          : storedDispatcher.files,
-        records: (storedDispatcher.records || []).map((record) =>
-          renameRecordFileReferences(record, renamedFiles)
-        ),
-        grades: {
-          ...renameGradeMap(storedDispatcher.grades, renamedFiles),
-          [targetTranscript]: savedPayload,
-        },
-      };
-    });
-
-    localStorage.setItem("dispatchers", JSON.stringify(storedDispatchers));
-    setDispatchers(storedDispatchers);
-
-    const storedBatchPages = parseStoredBatchPages(
-      localStorage.getItem("latestUploadBatch")
-    );
-    const nextBatchPages = storedBatchPages.map((page) => ({
-      ...page,
-      transcriptFilename:
-        renamedFiles[page.transcriptFilename] || page.transcriptFilename,
-    }));
-    localStorage.setItem(
-      "latestUploadBatch",
-      JSON.stringify({ pages: nextBatchPages })
-    );
-    setBatchPages(nextBatchPages);
-  };
-
   const persistCurrentGrades = async (
-    options?: { showMessage?: boolean; closeEditor?: boolean }
+    options?: {
+      showMessage?: boolean;
+      closeEditor?: boolean;
+      refreshAfterSave?: boolean;
+    }
   ): Promise<PersistedGradeResult> => {
     if (!currentTranscript || !currentGrade || !gradeData) {
       throw new Error("No current grade is available to save.");
@@ -610,47 +456,8 @@ const DispatcherDetails = ({
       gradeFilename,
       replacementPayload
     );
-    const savedGradePercentage =
-      response.new_grade ?? replacementPayload.grade_percentage;
     const renamedFiles = response.renamed_files || {};
     const nextTranscript = renamedFiles[currentTranscript] || currentTranscript;
-    const gradedFilesCount = transcripts.filter(
-      (transcriptFilename) => effectiveGrades[transcriptFilename]
-    ).length;
-    const previousOverallGrade = overallGrade ?? 0;
-    const previousCurrentGrade = Number(currentGrade.grade_percentage || 0);
-    const nextOverallGrade =
-      gradedFilesCount <= 1
-        ? savedGradePercentage
-        : (
-            (previousOverallGrade * gradedFilesCount -
-              previousCurrentGrade +
-              savedGradePercentage) /
-            gradedFilesCount
-          );
-    const savedPayload: FileGrade = {
-      ...replacementPayload,
-      grade_percentage: savedGradePercentage,
-    };
-
-    applySavedGradeState(savedPayload, renamedFiles, nextTranscript);
-    setOverallGradeOverride(nextOverallGrade);
-    setGradeData((previous) =>
-      previous
-        ? {
-            ...previous,
-            grade_percentage: savedGradePercentage,
-          }
-        : previous
-    );
-    setOriginalGradeData((previous) =>
-      previous
-        ? {
-            ...previous,
-            grade_percentage: savedGradePercentage,
-          }
-        : previous
-    );
 
     if (options?.showMessage ?? true) {
       setGradeSaveMessage("Grades saved.");
@@ -660,14 +467,30 @@ const DispatcherDetails = ({
       setIsEditingGrades(false);
     }
 
+    if (options?.refreshAfterSave ?? true) {
+      const refreshedRecordName =
+        getRecordNameFromOutputDestination(response.record_dir) ||
+        currentRecord?.name ||
+        "";
+
+      if (refreshedRecordName) {
+        await refreshRecordState(
+          refreshedRecordName,
+          options?.showMessage ?? true ? "Grades saved." : undefined
+        );
+      }
+    }
+
     return {
       response,
-      savedPayload,
       transcriptFilename: nextTranscript,
     };
   };
 
-  const refreshRecordState = async (recordName: string) => {
+  const refreshRecordState = async (
+    recordName: string,
+    successMessage?: string
+  ) => {
     const refreshedRecord = await fetchDispatcherRecordDetails(
       activeDispatcher.id,
       recordName
@@ -681,82 +504,45 @@ const DispatcherDetails = ({
     const refreshedGrade = await fetchGradeFile(refreshedRecord.gradeFile);
     const previousRecordName = currentRecord?.name;
     const previousTranscript = currentTranscript;
-
-    const storedDispatchers = parseStoredDispatchers(
-      localStorage.getItem("dispatchers")
-    ).map((storedDispatcher) => {
-      if (storedDispatcher.id !== activeDispatcher.id) {
-        return storedDispatcher;
+    const nextRecords = (dispatcher.records || []).map((record) => {
+      if (
+        record.name === previousRecordName ||
+        record.transcriptFile === previousTranscript
+      ) {
+        return refreshedRecord;
       }
 
-      const nextRecords = (storedDispatcher.records || []).map((record) => {
-        if (
-          record.name === previousRecordName ||
-          record.transcriptFile === previousTranscript
-        ) {
-          return refreshedRecord;
-        }
-
-        return record;
-      });
-
-      const nextTranscriptFiles = nextRecords
-        .map((record) => record.transcriptFile)
-        .filter((file): file is string => Boolean(file));
-      const nextAudioFiles = nextRecords
-        .map((record) => record.audioFile)
-        .filter((file): file is string => Boolean(file));
-      const nextGrades = { ...(storedDispatcher.grades || {}) };
-
-      if (previousTranscript && previousTranscript !== refreshedRecord.transcriptFile) {
-        delete nextGrades[previousTranscript];
-      }
-
-      nextGrades[refreshedTranscriptFile] = refreshedGrade;
-
-      return {
-        ...storedDispatcher,
-        overallGrade: calculateOverallGrade(nextTranscriptFiles, nextGrades) ?? 0,
-        records: nextRecords,
-        files: {
-          transcriptFiles: nextTranscriptFiles,
-          audioFiles: nextAudioFiles,
-        },
-        grades: nextGrades,
-      };
+      return record;
     });
 
-    localStorage.setItem("dispatchers", JSON.stringify(storedDispatchers));
-    setDispatchers(storedDispatchers);
-    setGradeOverrides((previous) => {
-      const nextOverrides = { ...previous };
-      if (previousTranscript && previousTranscript !== refreshedRecord.transcriptFile) {
-        delete nextOverrides[previousTranscript];
-      }
-      nextOverrides[refreshedTranscriptFile] = refreshedGrade;
-      return nextOverrides;
+    const nextTranscriptFiles = nextRecords
+      .map((record) => record.transcriptFile)
+      .filter((file): file is string => Boolean(file));
+    const nextAudioFiles = nextRecords
+      .map((record) => record.audioFile)
+      .filter((file): file is string => Boolean(file));
+    const nextGrades = { ...(dispatcher.grades || {}) };
+
+    if (previousTranscript && previousTranscript !== refreshedRecord.transcriptFile) {
+      delete nextGrades[previousTranscript];
+    }
+
+    nextGrades[refreshedTranscriptFile] = refreshedGrade;
+
+    onDispatcherChange({
+      ...dispatcher,
+      overallGrade: calculateOverallGrade(nextTranscriptFiles, nextGrades) ?? 0,
+      records: nextRecords,
+      files: {
+        transcriptFiles: nextTranscriptFiles,
+        audioFiles: nextAudioFiles,
+      },
+      grades: nextGrades,
     });
 
-    const storedBatchPages = parseStoredBatchPages(
-      localStorage.getItem("latestUploadBatch")
-    );
-    const nextBatchPages = storedBatchPages.map((page) => {
-      if (page.transcriptFilename === previousTranscript && refreshedRecord.transcriptFile) {
-        return {
-          ...page,
-          transcriptFilename: refreshedRecord.transcriptFile,
-        };
-      }
-
-      return page;
-    });
-    localStorage.setItem(
-      "latestUploadBatch",
-      JSON.stringify({ pages: nextBatchPages })
-    );
-    setBatchPages(nextBatchPages);
-    setOverallGradeOverride(null);
-    setGradeSaveMessage("Regrade complete.");
+    if (successMessage) {
+      setGradeSaveMessage(successMessage);
+    }
   };
 
   const handleEditButtonClick = async () => {
@@ -839,6 +625,7 @@ const DispatcherDetails = ({
       const saveResult = await persistCurrentGrades({
         showMessage: false,
         closeEditor: true,
+        refreshAfterSave: false,
       });
 
       const recordName =
@@ -906,10 +693,6 @@ const DispatcherDetails = ({
     setGradeSaveMessage("");
     setTranscriptSaveMessage("");
   }, [currentTranscript]);
-
-  useEffect(() => {
-    setOverallGradeOverride(null);
-  }, [activeDispatcher.id]);
 
   useEffect(() => {
     let isMounted = true;
@@ -1127,7 +910,7 @@ const handlePrintCurrent = async () => {
 };
 
 const handlePrintAll = async () => {
-  const allTranscripts = transcripts.filter((t) => effectiveGrades[t]);
+  const allTranscripts = transcripts.filter((t) => grades[t]);
   const printRecords = (await Promise.all(allTranscripts.map(buildPrintRecord)))
     .filter((r): r is PrintCallRecord => r !== null);
   if (printRecords.length) exportRecord(printRecords);
@@ -1395,14 +1178,35 @@ const handlePrintAll = async () => {
                         ([key, question]) => {
                           const typedQuestion = question as EditableQuestionGrade;
                           const displayStatus = getDisplayStatus(typedQuestion);
+                          const reasoning = (typedQuestion.reasoning || "").trim();
 
                           return (
-                          <div key={key} className="flex justify-between text-sm">
-                            <span>{typedQuestion.label}</span>
-                            <span className={getQuestionStatusClassName(displayStatus)}>
-                              {displayStatus}
-                            </span>
-                          </div>
+                            <details
+                              key={key}
+                              className="group"
+                            >
+                              <summary className="cursor-pointer list-none">
+                                <div className="flex items-start justify-between gap-3 text-sm">
+                                  <div className="flex min-w-0 items-start gap-2">
+                                    <span
+                                      aria-hidden="true"
+                                      className="mt-1 inline-block h-2.5 w-2.5 shrink-0 rotate-[-45deg] border-r-2 border-b-2 border-gray-400 transition-transform group-open:rotate-45"
+                                    />
+                                    <span>{typedQuestion.label}</span>
+                                  </div>
+                                  <span
+                                    className={getQuestionStatusClassName(
+                                      displayStatus
+                                    )}
+                                  >
+                                    {displayStatus}
+                                  </span>
+                                </div>
+                              </summary>
+                              <div className="ml-5 mt-1 whitespace-pre-line text-sm text-gray-600">
+                                {reasoning ? `Reasoning: ${reasoning}` : "No reasoning provided for this question."}
+                              </div>
+                            </details>
                           );
                         }
                       )}
