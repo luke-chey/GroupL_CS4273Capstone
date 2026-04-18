@@ -14,6 +14,10 @@ def _format_question_sequence(questions_dict: Dict[str, Dict[str, Any]]) -> str:
     lines = []
 
     for q_id, q in questions_dict.items():
+        # Do not include skipped questions in diplayed sequence
+        if q.get("Skip_AI_Grading", False):
+            continue
+
         question_id = q.get("Question_ID", q_id)
         question_text = q.get("Question_Text", "").strip()
 

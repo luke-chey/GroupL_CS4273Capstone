@@ -42,7 +42,8 @@
           "ECHO_Number": null,
           "ECHO_Letter": null,
           "ECHO_response": null,
-          "Scenario": null
+          "Scenario": null,
+          "Skip_AI_Grading": true
         },
         {
           "Parent_Question_ID": "1",
@@ -61,7 +62,8 @@
           "ECHO_Number": null,
           "ECHO_Letter": null,
           "ECHO_response": null,
-          "Scenario": null
+          "Scenario": null,
+          "Skip_AI_Grading": true
         },
         {
           "Parent_Question_ID": null,
@@ -99,7 +101,8 @@
           "ECHO_Number": null,
           "ECHO_Letter": null,
           "ECHO_response": null,
-          "Scenario": null
+          "Scenario": null,
+          "Skip_AI_Grading": true
         },
         {
           "Parent_Question_ID": null,
@@ -116,25 +119,6 @@
           "Situation": null,
           "ECHO_Level": null,
           "ECHO_Number": null,
-          "ECHO_Letter": null,
-          "ECHO_response": null,
-          "Scenario": null
-        },
-        {
-          "Parent_Question_ID": "3",
-          "Question_ID": "FT1",
-          "Question_Text": "Fast Track Used?",
-          "Allowed_Alternatives": null,
-          "Condition": "Used Correctly",
-          "Condition_Type": "Boolean",
-          "Age_Min_F": null,
-          "Age_Min_M": null,
-          "Clarification_Allowed": null,
-          "Macros": null,
-          "EIDS_Flag": null,
-          "Situation": null,
-          "ECHO_Level": "ECHO",
-          "ECHO_Number": "7, 9, 14",
           "ECHO_Letter": null,
           "ECHO_response": null,
           "Scenario": null

@@ -78,6 +78,14 @@ def ai_grade_per_question(
     grade_details: Dict[str, Dict[str, str]] = {}
 
     for question_id, question in questions_dict.items():
+        # Set skipped questions to N/A (5)
+        if question.get("Skip_AI_Grading", False):
+            grade_details[question_id] = {
+                "code": "5",
+                "reasoning": "This question was set to be skipped for AI grading.",
+            }
+            continue
+
         user_message = get_single_question_prompt(question)
         print(f"==============================\n[USER]\n{user_message}\n")
         messages.append({"role": "user", "content": user_message})
