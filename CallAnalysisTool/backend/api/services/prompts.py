@@ -51,11 +51,13 @@ def get_single_question_prompt(question: Dict[str, Any]) -> str:
         Evaluate ONLY the protocol question shown below using the full transcript already provided earlier in this conversation.
 
         Reminder of grading rules:
-        - Assign exactly ONE grade code: [1], [2], [3], [4], [5], or [6]
+        - Assign exactly ONE grade code: [1] (Asked Correctly), [2] (Not Asked), [3] (Asked Incorrectly), [4] (Not as Scripted), [5] (Not Applicable), or [6] (Obvious)
         - Begin your response with the bracketed grade code
+        - Default assumption: every protocol question shown should have been asked by the dispatcher
+        - The ONLY exception is when the question has a Condition and that Condition is not met by transcript evidence
         - [3] takes priority if wording changes meaning, even if the question was also out of order
         - Use [4] only if the wording is acceptable but the sequencing is wrong
-        - Use [6] only if the caller clearly already gave the answer
+        - Use [6] only if the caller plainly and directly stated the answer to this exact question, with no assumption or context required
         - Base your decision only on transcript evidence
         - Speaker labels may be incorrect; if the exchange appears implausible, use the most reasonable interpretation of who is speaking, but do not invent missing dialogue
         - After the grade, give concise reasoning and include direct supporting quote(s) with speaker, timestamp, and exact wording
@@ -112,7 +114,7 @@ def get_nature_code_prompt(transcript_path, nature_codes_master):
 
     Return your answer in the following format:
 
-    [ID]
+    [ID] (NUMBER IN BRACKETS ONLY)
 
     Reasoning:
     - CONCISELY explain why this is the correct classification
@@ -166,10 +168,11 @@ GRADING_BASE_PROMPT = textwrap.dedent("""
     - But asked out of order
 
     5 = Not Applicable  
-    - Conditions to ask the question were not met
+    - Use only when the protocol question has a Condition and transcript evidence shows that Condition was not met
 
     6 = Obvious  
-    - Caller already clearly provided the answer
+    - Caller plainly and directly stated the answer to the given question
+    - No assumption, inference, or surrounding context is required to know the answer
     - Dispatcher appropriately did not ask it again
 
     --------------------------------------------------
@@ -178,7 +181,11 @@ GRADING_BASE_PROMPT = textwrap.dedent("""
 
     - If wording changes meaning → ALWAYS use (3), even if also out of order
     - Use (4) ONLY when wording is acceptable but sequencing is wrong
-    - Use (6) ONLY when the answer is explicitly stated by the caller
+    - Use (6) ONLY when the answer to the given question is plainly, directly stated by the caller
+    - Do NOT use (6) when the answer requires assumption, inference, interpretation, or surrounding context
+    - Every protocol question presented to you SHOULD HAVE BEEN ASKED BY THE DISPATCHER by default
+    - The ONLY TIME a presented question should not be asked is when it has a Condition and that Condition is not met by transcript evidence
+    - If a question has no Condition, treat it as required and grade an omission as (2), not (5)
     - Do not infer missing context—base decisions only on transcript evidence
     - Evaluate strictly—protocol compliance overrides conversational naturalness
 
@@ -203,7 +210,8 @@ GRADING_BASE_PROMPT = textwrap.dedent("""
     - Meaning
     - Order
     - Necessity (should it have been asked?)
-    - Consider surrounding context in the transcript when determining applicability
+    - Consider surrounding context in the transcript only when determining whether an explicit Condition was met
+    - Do not mark a question Not Applicable just because it seems unnecessary or conversationally redundant
 
     --------------------------------------------------
     OUTPUT FORMAT (STRICT)

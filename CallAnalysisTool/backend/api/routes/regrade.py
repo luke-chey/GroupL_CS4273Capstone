@@ -176,22 +176,25 @@ def regrade_record(agent, record_identifier):
         temp_dir = OUTPUT_DIR / "_tmp" / uuid.uuid4().hex
         temp_dir.mkdir(parents=True, exist_ok=True)
 
-        manual_nature_code_reasoning = (
-            "This Nature Code was manually selected before regrading."
-        )
+        nature_code_changed = (nature_code_name != nature)
+        nature_code_reasoning = existing_grades.get("nature_code_reasoning", "")
+        if nature_code_changed:
+            nature_code_reasoning = (
+                "This Nature Code was manually selected before regrading."
+            )
 
         response, _ = grade_transcript_file(
             nature_code_id=nature_code_id,
             transcript_path=transcript_path,
             output_path=temp_dir,
-            nature_code_reasoning=manual_nature_code_reasoning,
+            nature_code_reasoning=nature_code_reasoning,
         )
 
         final_record_dir = record_dir
         final_grade_path = grade_file_path
         rename_result = None
 
-        if nature_code_name != nature:
+        if nature_code_changed:
             rename_result = rename_record_files(
                 agent_name=agent,
                 date=date,
