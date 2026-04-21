@@ -11,6 +11,7 @@ from typing import Dict, Optional
 import sys
 import json
 import argparse
+import torch
 
 
 _global_transcriber = None
@@ -28,25 +29,25 @@ class TranscriptionConfig:
     initial_prompt: Optional[str] = None
     word_timestamps: bool = True
     vad_filter: bool = False
-    fp16: bool = False  # Always False for CPU
+    fp16: bool = True  # GPU uses FP16
     condition_on_previous_text: bool = True
     compression_ratio_threshold: float = 2.4
     log_prob_threshold: float = -1.0
     no_speech_threshold: float = 0.6
     align_model: Optional[str] = None
-    batch_size: int = 16
+    batch_size: int = 32  # GPU can handle mor
 
     def to_dict(self):
         return asdict(self)
 
 
 class WhisperXTranscriber:
-    """WhisperX transcription wrapper - CPU only"""
+    """WhisperX transcription wrapper"""
 
     def __init__(self, config: TranscriptionConfig = None):
         self.config = config or TranscriptionConfig()
         self.model = None
-        self.device = "cpu"  # Always CPU
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.whisperx = None
 
     def load_model(self):
@@ -59,12 +60,14 @@ class WhisperXTranscriber:
                 "WhisperX not installed."
             )
 
-        print(f"Loading WhisperX-{self.config.model_size} on CPU...")
+        print(f"Loading WhisperX-{self.config.model_size}")
+        print("Cuda available: ", torch.cuda.is_available())
+        compute_type = "float16" if self.device == "cuda" else "int8"
 
         self.model = whisperx.load_model(
             self.config.model_size,
-            "cpu",
-            compute_type="int8"  # Always int8 for CPU
+            self.device,
+            compute_type=compute_type
         )
         print("Model loaded successfully!")
 
@@ -185,7 +188,7 @@ def initialize_transcriber():
 
     if _global_transcriber is None:
         print("=" * 60)
-        print("Preloading WhisperX model on CPU...")
+        print("Preloading WhisperX")
         print("=" * 60)
 
         _transcriber_config = TranscriptionConfig()

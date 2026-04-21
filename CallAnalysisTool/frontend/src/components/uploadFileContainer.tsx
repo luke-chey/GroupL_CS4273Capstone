@@ -4,10 +4,9 @@ import { uploadFileForAnalysis, uploadTranscriptForAnalysis } from "@/lib/api";
 import ProgressModal from "./ProgressModal";
 import { useRouter } from "next/navigation";
 
-interface BatchPageEntry {
+interface UploadTarget {
   dispatcherId: string;
-  transcriptFilename: string;
-  uploadOrder: number;
+  recordName: string;
 }
 
 const UploadFileContainer = () => {
@@ -17,10 +16,8 @@ const UploadFileContainer = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadProgress, setUploadProgress] = useState<string>("");
   const [progressPercentage, setProgressPercentage] = useState<number>(0);
-  const [showProgressModal, setShowProgressModal] = useState<boolean>(false);
   const [totalStartTime, setTotalStartTime] = useState<number | null>(null);
   const [currentFileStartTime, setCurrentFileStartTime] = useState<number | null>(null);
-  const [currentFileName, setCurrentFileName] = useState<string>("");
   const [elapsedNow, setElapsedNow] = useState<number>(Date.now());
   const router = useRouter();
   // Define allowed file types
@@ -121,33 +118,12 @@ const UploadFileContainer = () => {
     currentFileStartTime ? elapsedNow - currentFileStartTime : null
   );
 
-
-  const orderBatchPages = (batchPages: BatchPageEntry[]) => {
-    // Group by dispatcher first so multi-file dispatchers stay contiguous.
-    const groupedByDispatcher = new Map<string, BatchPageEntry[]>();
-    const dispatcherOrder: string[] = [];
-
-    for (const page of batchPages) {
-      if (!groupedByDispatcher.has(page.dispatcherId)) {
-        groupedByDispatcher.set(page.dispatcherId, []);
-        dispatcherOrder.push(page.dispatcherId);
-      }
-      groupedByDispatcher.get(page.dispatcherId)?.push(page);
-    }
-
-    // Flatten in dispatcher first-seen order while preserving each group's upload order.
-    return dispatcherOrder.flatMap(
-      (dispatcherId) => groupedByDispatcher.get(dispatcherId) || []
-    );
-  };
-
   // Handle one file end-to-end: transcribe (if zip), grade, and persist all in one call.
   const uploadAndGradeFile = async (
     file: File,
     index: number,
     total: number
-  ): Promise<BatchPageEntry> => {
-    setCurrentFileName(file.name);
+  ): Promise<UploadTarget> => {
     setCurrentFileStartTime(Date.now());
 
     const isZip = file.name.endsWith(".zip");
@@ -167,14 +143,12 @@ const UploadFileContainer = () => {
         .replace(/\\/g, "/")
         .split("/")
         .filter((p: string) => p);
-      const folderName = pathParts[pathParts.length - 1]; // date_time_code
-      const transcriptFilename = `${folderName}.json`;
+      const folderName = pathParts[pathParts.length - 1];
 
       setProgressPercentage(Math.round(((index + 1) / total) * 100));
       return {
         dispatcherId: dispatcherName,
-        transcriptFilename,
-        uploadOrder: index,
+        recordName: folderName,
       };
     } else if (isJson) {
       setUploadProgress(
@@ -195,14 +169,12 @@ const UploadFileContainer = () => {
         .replace(/\\/g, "/")
         .split("/")
         .filter((p: string) => p);
-      const folderName = pathParts[pathParts.length - 1]; // date_time_code
-      const transcriptFilename = `${folderName}.json`;
+      const folderName = pathParts[pathParts.length - 1];
 
       setProgressPercentage(Math.round(((index + 1) / total) * 100));
       return {
         dispatcherId: dispatcherName,
-        transcriptFilename,
-        uploadOrder: index,
+        recordName: folderName,
       };
     } else {
       throw new Error(`Unsupported file type: ${file.name}`);
@@ -216,35 +188,31 @@ const UploadFileContainer = () => {
     }
 
     setIsUploading(true);
-    setShowProgressModal(true);
     setProgressPercentage(0);
     setUploadProgress("Processing files...");
     const startedAt = Date.now();
     setElapsedNow(startedAt);
     setTotalStartTime(startedAt);
     setCurrentFileStartTime(startedAt);
-    setCurrentFileName(selectedFiles[0]?.name || "");
 
     try {
       // Single unified upload + transcription + grading pipeline
-      const batchPages: BatchPageEntry[] = [];
+      let firstTarget: UploadTarget | null = null;
       for (const [index, file] of selectedFiles.entries()) {
-        batchPages.push(
-          await uploadAndGradeFile(file, index, selectedFiles.length)
-        );
+        const target = await uploadAndGradeFile(file, index, selectedFiles.length);
+        if (!firstTarget) {
+          firstTarget = target;
+        }
       }
-
-      const orderedBatchPages = orderBatchPages(batchPages);
 
       setUploadProgress("Processing complete!");
       setCurrentFileStartTime(null);
-      setCurrentFileName("");
 
-      const firstPage = orderedBatchPages[0];
       setTimeout(() => {
-        setShowProgressModal(false);
-        if (firstPage) {
-          router.push(`/records/${firstPage.dispatcherId}?batch=1`);
+        if (firstTarget) {
+          router.push(
+            `/records/${encodeURIComponent(firstTarget.dispatcherId)}/${encodeURIComponent(firstTarget.recordName)}`
+          );
         }
       }, 1000);
     } catch (error) {
@@ -254,13 +222,11 @@ const UploadFileContainer = () => {
           error instanceof Error ? error.message : "Unknown error"
         }`
       );
-      setShowProgressModal(false);
     } finally {
       setIsUploading(false);
       setUploadProgress("");
       setTotalStartTime(null);
       setCurrentFileStartTime(null);
-      setCurrentFileName("");
     }
   };
 
@@ -387,12 +353,14 @@ const UploadFileContainer = () => {
         </button>
       </div>
       <ProgressModal
-        oneFile={selectedFiles.length==1}
+        title={selectedFiles.length === 1 ? "Processing File" : "Processing Files"}
+        oneFile={selectedFiles.length === 1}
         isOpen={isUploading}
         progress={progressPercentage}
         currentStep={uploadProgress}
         elapsedTime={totalElapsedTime}
         currentFileElapsedTime={currentFileElapsedTime}
+        showProgressBar={selectedFiles.length > 1}
       />
     </div>
   );

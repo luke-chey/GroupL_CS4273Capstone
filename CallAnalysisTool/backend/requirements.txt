@@ -1,24 +1,27 @@
 # Backend API Dependencies
 # Python 3.9+
 
+torch==2.8.0
+torchaudio==2.8.0
+torchvision==0.23.0
+torchcodec>=0.7.0,<0.8.0
+whisperx==3.8.5
+pyannote-audio==4.0.4
+
 # Flask API
 Flask==3.0.0
 flask-cors==4.0.0
 urllib3>=2.6.3              # URI string decoding
 uuid                        # UUID generation
 pathvalidate                # Filename and folder name sanitization
-textwrap                    # Pretty literal strings
 
 # AI Grading
 ollama==0.4.4               # Ollama Python client for LLM-based grading
 
 # Core Scientific Computing
 numpy>=2.0.2,<2.3.0
-torch>=2.0.0,<3.0.0 
 
 # AI Transcription
-whisperx~=3.7.4
-pyannote.audio
 nltk>=3.9.0
 
 # Speaker Separation
