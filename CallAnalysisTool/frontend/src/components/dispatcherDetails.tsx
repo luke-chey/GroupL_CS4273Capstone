@@ -62,6 +62,7 @@ interface CallListItem {
   detectedNatureCode?: string;
   nature: string;
   natureCodes: string[];
+  filenameNatureCodes: string[];
   formattedDateTime: string;
   searchText: string;
 }
@@ -505,13 +506,20 @@ const DispatcherDetails = ({
         const detectedNatureCode = normalizeTextValue(
           grade?.detected_nature_code ?? ""
         );
-        const natureCodes = Array.from(
+        const filenameNatureCodes = Array.from(
           new Set(
             [
               transcriptParts?.nature,
               audioParts?.nature,
-              detectedNatureCode,
               getNatureFromRecordName(record?.name),
+            ].filter((nature): nature is string => Boolean(nature))
+          )
+        );
+        const natureCodes = Array.from(
+          new Set(
+            [
+              ...filenameNatureCodes,
+              detectedNatureCode,
             ].filter((nature): nature is string => Boolean(nature))
           )
         );
@@ -541,6 +549,8 @@ const DispatcherDetails = ({
           detectedNatureCode,
           nature,
           natureCodes: natureCodes.length ? natureCodes : ["Unknown"],
+          filenameNatureCodes:
+            filenameNatureCodes.length ? filenameNatureCodes : ["Unknown"],
           formattedDateTime,
           searchText,
         };
@@ -550,7 +560,7 @@ const DispatcherDetails = ({
 
   const natureOptions = useMemo(
     () =>
-      Array.from(new Set(callListItems.flatMap((item) => item.natureCodes)))
+      Array.from(new Set(callListItems.flatMap((item) => item.filenameNatureCodes)))
         .filter((nature) => nature !== "Unknown")
         .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" })),
     [callListItems]
@@ -1121,35 +1131,7 @@ const handlePrintAll = async () => {
 
         <div className="mt-4 flex items-center justify-between gap-4 print:hidden">
           <div className="flex flex-wrap items-center gap-3">
-            <button
-              onClick={() => setCurrentIndex((i) => Math.max(i - 1, 0))}
-              disabled={!canMovePrevious}
-              className={paginationButtonClassName}
-            >
-              <ChevronLeft className="mr-2 h-4 w-4" aria-hidden="true" />
-              Previous Call
-            </button>
-
-            <span className="text-sm font-medium text-slate-700">
-              {activePages.length === 0
-                ? "0 / 0"
-                : `${safeIndex + 1} / ${activePages.length}`}
-            </span>
-
-            <button
-              onClick={() =>
-                setCurrentIndex((i) =>
-                  Math.min(i + 1, activePages.length - 1)
-                )
-              }
-              disabled={!canMoveNext}
-              className={paginationButtonClassName}
-            >
-              Next Call
-              <ChevronRight className="ml-2 h-4 w-4" aria-hidden="true" />
-            </button>
-
-            <div className="relative">
+                        <div className="relative">
               <button
                 type="button"
                 onClick={() => setIsCallListOpen((open) => !open)}
@@ -1159,7 +1141,7 @@ const handlePrintAll = async () => {
                 aria-controls="dispatcher-call-list"
               >
                 <ListFilter className="mr-2 h-4 w-4" aria-hidden="true" />
-                Calls
+                All Calls
                 <ChevronDown
                   className={`ml-2 h-4 w-4 transition-transform ${
                     isCallListOpen ? "rotate-180" : ""
@@ -1272,6 +1254,34 @@ const handlePrintAll = async () => {
                 </div>
               )}
             </div>
+            
+            <button
+              onClick={() => setCurrentIndex((i) => Math.max(i - 1, 0))}
+              disabled={!canMovePrevious}
+              className={paginationButtonClassName}
+            >
+              <ChevronLeft className="mr-2 h-4 w-4" aria-hidden="true" />
+              Previous Call
+            </button>
+
+            <span className="text-sm font-medium text-slate-700">
+              {activePages.length === 0
+                ? "0 / 0"
+                : `${safeIndex + 1} / ${activePages.length}`}
+            </span>
+
+            <button
+              onClick={() =>
+                setCurrentIndex((i) =>
+                  Math.min(i + 1, activePages.length - 1)
+                )
+              }
+              disabled={!canMoveNext}
+              className={paginationButtonClassName}
+            >
+              Next Call
+              <ChevronRight className="ml-2 h-4 w-4" aria-hidden="true" />
+            </button>
           </div>
 
           <div className="flex items-center gap-3">
