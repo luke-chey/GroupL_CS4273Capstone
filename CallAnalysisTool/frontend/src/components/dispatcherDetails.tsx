@@ -1,6 +1,13 @@
 "use client";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import {
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ListFilter,
+  Search,
+} from "lucide-react";
 import { Dispatcher, DispatcherRecord, FileParts } from "@/types/dispatcher";
 import {
   Card,
@@ -44,6 +51,19 @@ interface EditableQuestionGrade {
   label: string;
   status: string;
   reasoning?: string;
+}
+
+interface CallListItem {
+  index: number;
+  dispatcherName: string;
+  transcriptFilename: string;
+  audioFilename?: string;
+  gradePercentage?: number;
+  detectedNatureCode?: string;
+  nature: string;
+  natureCodes: string[];
+  formattedDateTime: string;
+  searchText: string;
 }
 
 interface EditableGradeData {
@@ -220,6 +240,45 @@ const formatDateRangePart = (dateValue?: string): string | null => {
   return `${Number(month)}/${Number(day)}/${year}`;
 };
 
+const safeGetFileParts = (filename: string | undefined): FileParts | null => {
+  if (!filename) {
+    return null;
+  }
+
+  try {
+    return getFileParts(filename);
+  } catch {
+    return null;
+  }
+};
+
+const getNatureFromRecordName = (recordName?: string): string | null => {
+  if (!recordName) {
+    return null;
+  }
+
+  const parts = recordName.split("_");
+  if (parts.length < 3) {
+    return null;
+  }
+
+  return parts.slice(2).join("_");
+};
+
+const formatCallDateTime = (fileParts: FileParts | null): string => {
+  if (!fileParts) {
+    return "Unknown time";
+  }
+
+  return `${fileParts.dateTime.toLocaleDateString()}, ${fileParts.dateTime.toLocaleTimeString(
+    [],
+    {
+      hour: "numeric",
+      minute: "2-digit",
+    }
+  )}`;
+};
+
 const formatElapsedTime = (ms: number | null) => {
   if (!ms || ms < 0) return "00:00";
 
@@ -333,6 +392,9 @@ const DispatcherDetails = ({
   const [isEditingTranscript, setIsEditingTranscript] = useState(false);
   const [transcriptSaveMessage, setTranscriptSaveMessage] = useState("");
   const [isTranscriptSaving, setIsTranscriptSaving] = useState(false);
+  const [isCallListOpen, setIsCallListOpen] = useState(false);
+  const [callSearchQuery, setCallSearchQuery] = useState("");
+  const [natureFilter, setNatureFilter] = useState("all");
   const [isRegrading, setIsRegrading] = useState(false);
   const [regradeProgress, setRegradeProgress] = useState(0);
   const [regradeStep, setRegradeStep] = useState("");
@@ -374,12 +436,24 @@ const DispatcherDetails = ({
     setCurrentIndex(idx >= 0 ? idx : 0);
   }, [activePages, dispatcher.records, initialRecordName]);
 
-  const safeIndex = Math.min(currentIndex, activePages.length - 1);
+  const safeIndex =
+    activePages.length > 0
+      ? Math.min(currentIndex, activePages.length - 1)
+      : 0;
   const currentPage = activePages[safeIndex];
   const activeDispatcher = dispatcher;
-  const records = dispatcher.records || [];
-  const transcripts = dispatcher.files?.transcriptFiles || [];
-  const grades = dispatcher.grades || {};
+  const records = useMemo(
+    () => activeDispatcher.records || [],
+    [activeDispatcher.records]
+  );
+  const transcripts = useMemo(
+    () => activeDispatcher.files?.transcriptFiles || [],
+    [activeDispatcher.files?.transcriptFiles]
+  );
+  const grades = useMemo(
+    () => activeDispatcher.grades || {},
+    [activeDispatcher.grades]
+  );
   const recordByTranscript = new Map<string, DispatcherRecord>(
     records
       .filter((record): record is DispatcherRecord & { transcriptFile: string } =>
@@ -412,9 +486,105 @@ const DispatcherDetails = ({
     ? recordByTranscript.get(currentTranscript)
     : undefined;
   const matchedAudio = currentRecord?.audioFile;
+  const currentFileParts = safeGetFileParts(currentTranscript);
+  const matchedAudioFileParts = safeGetFileParts(matchedAudio);
   const regradeElapsedTime = formatElapsedTime(
     regradeStartedAt ? regradeElapsedNow - regradeStartedAt : null
   );
+
+  const callListItems = useMemo<CallListItem[]>(
+    () =>
+      activePages.map((page, index) => {
+        const record = records.find(
+          (dispatcherRecord) =>
+            dispatcherRecord.transcriptFile === page.transcriptFilename
+        );
+        const grade = grades[page.transcriptFilename];
+        const transcriptParts = safeGetFileParts(page.transcriptFilename);
+        const audioParts = safeGetFileParts(record?.audioFile);
+        const detectedNatureCode = normalizeTextValue(
+          grade?.detected_nature_code ?? ""
+        );
+        const natureCodes = Array.from(
+          new Set(
+            [
+              transcriptParts?.nature,
+              audioParts?.nature,
+              detectedNatureCode,
+              getNatureFromRecordName(record?.name),
+            ].filter((nature): nature is string => Boolean(nature))
+          )
+        );
+        const nature = natureCodes[0] || "Unknown";
+        const formattedDateTime = formatCallDateTime(transcriptParts || audioParts);
+        const searchText = [
+          activeDispatcherName,
+          page.transcriptFilename,
+          record?.audioFile,
+          record?.name,
+          ...natureCodes,
+          formattedDateTime,
+          typeof grade?.grade_percentage === "number"
+            ? `${grade.grade_percentage}`
+            : "",
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+
+        return {
+          index,
+          dispatcherName: activeDispatcherName,
+          transcriptFilename: page.transcriptFilename,
+          audioFilename: record?.audioFile,
+          gradePercentage: grade?.grade_percentage,
+          detectedNatureCode,
+          nature,
+          natureCodes: natureCodes.length ? natureCodes : ["Unknown"],
+          formattedDateTime,
+          searchText,
+        };
+      }),
+    [activeDispatcherName, activePages, grades, records]
+  );
+
+  const natureOptions = useMemo(
+    () =>
+      Array.from(new Set(callListItems.flatMap((item) => item.natureCodes)))
+        .filter((nature) => nature !== "Unknown")
+        .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" })),
+    [callListItems]
+  );
+
+  useEffect(() => {
+    if (natureFilter !== "all" && !natureOptions.includes(natureFilter)) {
+      setNatureFilter("all");
+    }
+  }, [natureFilter, natureOptions]);
+
+  useEffect(() => {
+    setCallSearchQuery("");
+    setNatureFilter("all");
+  }, [dispatcher.id, endDate, startDate]);
+
+  const normalizedCallSearchQuery = callSearchQuery.trim().toLowerCase();
+  const filteredCallListItems = callListItems.filter((item) => {
+    const matchesNature =
+      natureFilter === "all" || item.natureCodes.includes(natureFilter);
+    const matchesSearch =
+      !normalizedCallSearchQuery ||
+      item.searchText.includes(normalizedCallSearchQuery);
+
+    return matchesNature && matchesSearch;
+  });
+
+  const selectCall = (index: number) => {
+    setCurrentIndex(index);
+    setIsCallListOpen(false);
+  };
+  const canMovePrevious = activePages.length > 0 && safeIndex > 0;
+  const canMoveNext =
+    activePages.length > 0 && safeIndex < activePages.length - 1;
 
   const overallGrade = calculateOverallGrade(transcripts, grades);
   const formattedStartDate = formatDateRangePart(startDate);
@@ -950,16 +1120,17 @@ const handlePrintAll = async () => {
         </p>
 
         <div className="mt-4 flex items-center justify-between gap-4 print:hidden">
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <button
               onClick={() => setCurrentIndex((i) => Math.max(i - 1, 0))}
-              disabled={safeIndex === 0}
+              disabled={!canMovePrevious}
               className={paginationButtonClassName}
             >
+              <ChevronLeft className="mr-2 h-4 w-4" aria-hidden="true" />
               Previous Call
             </button>
 
-            <span>
+            <span className="text-sm font-medium text-slate-700">
               {activePages.length === 0
                 ? "0 / 0"
                 : `${safeIndex + 1} / ${activePages.length}`}
@@ -971,11 +1142,136 @@ const handlePrintAll = async () => {
                   Math.min(i + 1, activePages.length - 1)
                 )
               }
-              disabled={safeIndex === activePages.length - 1}
+              disabled={!canMoveNext}
               className={paginationButtonClassName}
             >
               Next Call
+              <ChevronRight className="ml-2 h-4 w-4" aria-hidden="true" />
             </button>
+
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setIsCallListOpen((open) => !open)}
+                disabled={activePages.length === 0}
+                className={paginationButtonClassName}
+                aria-expanded={isCallListOpen}
+                aria-controls="dispatcher-call-list"
+              >
+                <ListFilter className="mr-2 h-4 w-4" aria-hidden="true" />
+                Calls
+                <ChevronDown
+                  className={`ml-2 h-4 w-4 transition-transform ${
+                    isCallListOpen ? "rotate-180" : ""
+                  }`}
+                  aria-hidden="true"
+                />
+              </button>
+
+              {isCallListOpen && (
+                <div
+                  id="dispatcher-call-list"
+                  className="absolute left-0 top-full z-20 mt-2 w-[min(88vw,32rem)] rounded-md border border-slate-200 bg-white shadow-lg"
+                >
+                  <div className="space-y-3 border-b border-slate-200 p-3">
+                    <div className="relative">
+                      <Search
+                        className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+                        aria-hidden="true"
+                      />
+                      <input
+                        type="search"
+                        value={callSearchQuery}
+                        onChange={(event) =>
+                          setCallSearchQuery(event.target.value)
+                        }
+                        placeholder="Search calls..."
+                        className="h-9 w-full rounded-md border border-slate-300 bg-white py-1 pl-9 pr-3 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                      />
+                    </div>
+
+                    <div>
+                      <label
+                        htmlFor="call-nature-filter"
+                        className="mb-1 block text-xs font-medium text-slate-600"
+                      >
+                        Nature code
+                      </label>
+                      <select
+                        id="call-nature-filter"
+                        value={natureFilter}
+                        onChange={(event) =>
+                          setNatureFilter(event.target.value)
+                        }
+                        className="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                      >
+                        <option value="all">All nature codes</option>
+                        {natureOptions.map((nature) => (
+                          <option key={nature} value={nature}>
+                            {nature}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="max-h-80 overflow-y-auto p-2">
+                    {filteredCallListItems.length === 0 ? (
+                      <p className="px-3 py-4 text-sm text-slate-500">
+                        No calls match those filters.
+                      </p>
+                    ) : (
+                      <div className="space-y-1">
+                        {filteredCallListItems.map((item) => {
+                          const isSelected = item.index === safeIndex;
+
+                          return (
+                            <button
+                              key={`${item.dispatcherName}-${item.transcriptFilename}-${item.index}`}
+                              type="button"
+                              onClick={() => selectCall(item.index)}
+                              className={`w-full rounded-md border px-3 py-2 text-left text-sm transition ${
+                                isSelected
+                                  ? "border-blue-500 bg-blue-50"
+                                  : "border-transparent hover:bg-slate-50"
+                              }`}
+                              aria-current={isSelected ? "true" : undefined}
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <p className="truncate font-medium text-slate-900">
+                                    {item.formattedDateTime}
+                                  </p>
+                                  <p className="truncate text-xs text-slate-500">
+                                    {item.transcriptFilename}
+                                  </p>
+                                </div>
+                                {typeof item.gradePercentage === "number" && (
+                                  <span className="shrink-0 rounded border border-slate-200 bg-white px-2 py-0.5 text-xs font-semibold text-slate-700">
+                                    {item.gradePercentage.toFixed(1)}%
+                                  </span>
+                                )}
+                              </div>
+                              <div className="mt-2 flex flex-wrap gap-2">
+                                <span className="rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs text-slate-700">
+                                  {item.nature}
+                                </span>
+                                {item.detectedNatureCode &&
+                                  item.detectedNatureCode !== item.nature && (
+                                    <span className="rounded border border-sky-200 bg-sky-50 px-2 py-0.5 text-xs text-sky-700">
+                                      {item.detectedNatureCode}
+                                    </span>
+                                  )}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="flex items-center gap-3">
@@ -1013,7 +1309,12 @@ const handlePrintAll = async () => {
                       aria-hidden="true"
                       className="inline-block h-2.5 w-2.5 shrink-0 rotate-[-45deg] border-r-2 border-b-2 border-gray-400 transition-transform group-open:rotate-45"
                     />
-                    <span>Nature Code: {getFileParts(currentTranscript).nature}</span>
+                    <span>
+                      Nature Code:{" "}
+                      {currentFileParts?.nature ||
+                        currentGrade?.detected_nature_code ||
+                        "Unknown"}
+                    </span>
                   </div>
                 </summary>
                 <CardDescription className="ml-5 mt-1 whitespace-pre-line">
@@ -1021,7 +1322,6 @@ const handlePrintAll = async () => {
                 </CardDescription>
               </details>
               <CardDescription>
-                {/* dumb workaround */}
                 {currentRecord?.gradeFile ||
                   (currentTranscript
                     ? currentTranscript.replace(/_transcript\.json$/i, "_grades.json")
@@ -1247,10 +1547,7 @@ const handlePrintAll = async () => {
           <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
             <div className="min-w-0">
               <CardTitle>Audio and Transcript</CardTitle>
-              <div>
-                Timestamp: {`${getFileParts(matchedAudio).dateTime.toLocaleDateString()}, ${getFileParts(matchedAudio).dateTime.toLocaleTimeString()
-                  }`}
-              </div>
+              <div>Timestamp: {formatCallDateTime(matchedAudioFileParts)}</div>
               <CardDescription>{matchedAudio}</CardDescription>
               <CardDescription>{currentTranscript}</CardDescription>
             </div>
