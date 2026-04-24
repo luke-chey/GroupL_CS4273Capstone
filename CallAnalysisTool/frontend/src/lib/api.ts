@@ -20,6 +20,7 @@ export interface ApiResponse {
   grader_type: string;
   grade_percentage: number;
   detected_nature_code: string;
+  nature_code_reasoning?: string;
   total_questions: number;
   case_entry_questions: number;
   nature_code_questions: number;
@@ -52,6 +53,31 @@ export interface UploadPipelineResponse {
 export interface Question {
   questionId: string;
   label: string;
+}
+
+export interface NatureCodeOption {
+  id: string;
+  name: string;
+}
+
+export interface NatureCodeGradeTemplate {
+  detected_nature_code: string;
+  nature_code_name?: string;
+  grades: {
+    [questionId: string]: {
+      code: string;
+      label: string;
+      status: string;
+      reasoning?: string;
+    };
+  };
+}
+
+export interface RegradeResponse {
+  outputDestination: string;
+  dispatcherName: string;
+  grades: ApiResponse;
+  renamed_files?: Record<string, string>;
 }
 
 interface DispatcherSummaryResponse {
@@ -291,6 +317,18 @@ export async function fetchBackendFile<T>(filename: string): Promise<T> {
   return fetchJson<T>(`/api/files/${encodeURIComponent(filename)}`);
 }
 
+export async function fetchNatureCodeOptions(): Promise<NatureCodeOption[]> {
+  return fetchJson<NatureCodeOption[]>(`/api/files/nature-codes`);
+}
+
+export async function fetchNatureCodeGradeTemplate(
+  natureCodeId: string
+): Promise<NatureCodeGradeTemplate> {
+  return fetchJson<NatureCodeGradeTemplate>(
+    `/api/files/nature-codes/${encodeURIComponent(natureCodeId)}`
+  );
+}
+
 export async function putBackendFile<TResponse = unknown>(
   filename: string,
   data: unknown
@@ -303,6 +341,25 @@ export async function putBackendFile<TResponse = unknown>(
         "Content-Type": "application/json",
       },
       body: JSON.stringify(data),
+    }
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => response.statusText);
+    throw new Error(`API error (${response.status}): ${errorText || response.statusText}`);
+  }
+
+  return response.json();
+}
+
+export async function regradeRecord(
+  dispatcherName: string,
+  recordName: string
+): Promise<RegradeResponse> {
+  const response = await fetch(
+    `${getApiBaseUrl()}/api/regrade/${encodeURIComponent(dispatcherName)}/${encodeURIComponent(recordName)}`,
+    {
+      method: "POST",
     }
   );
 

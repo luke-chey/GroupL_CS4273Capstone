@@ -59,7 +59,7 @@ def upload():
 
         # Set defaults
         date = time = agent_name = (None,) * 3
-        cdr_path = audio_path = transcript_path = grades_path = nature_code = (None,) * 5
+        cdr_path = audio_path = transcript_path = grades_path = nature_code_name = (None,) * 5
         transcript_data = None
 
         # Do all processing in temp dir
@@ -140,11 +140,16 @@ def upload():
         
         # Detect nature code
         print("Detecting nature code with AI")
-        nature_code = detect_nature_code(transcript_path)
-        print("Detected nature code: ", nature_code)
+        nature_code_id, nature_code_name, nature_code_reasoning = detect_nature_code(transcript_path)
+        print(f"Detected nature code: [{nature_code_id}] {nature_code_name}\nReasoning: {nature_code_reasoning}")
         
         # Get grades
-        response, grades_path = grade_transcript_file(nature_code, transcript_path, TEMP_PATH)
+        response, grades_path = grade_transcript_file(
+            nature_code_id,
+            transcript_path,
+            TEMP_PATH,
+            nature_code_reasoning=nature_code_reasoning,
+        )
 
         # Create destination folder and move everything there
         # Base output directory
@@ -152,7 +157,7 @@ def upload():
 
         # Sanitize directory components (not full path yet)
         safe_agent = sanitize_filename(agent_name, replacement_text="-")
-        safe_folder = sanitize_filename(f"{date}_{time}_{nature_code}", replacement_text="-")
+        safe_folder = sanitize_filename(f"{date}_{time}_{nature_code_name}", replacement_text="-")
 
         # Build and sanitize full directory path
         dest_dir = sanitize_filepath(base_dir / safe_agent / safe_folder, replacement_text="-")
@@ -161,7 +166,7 @@ def upload():
 
         # Build base filename safely
         base_name = sanitize_filename(
-            f"{agent_name}_{date}_{time}_{nature_code}",
+            f"{agent_name}_{date}_{time}_{nature_code_name}",
             replacement_text="-"
         )
 

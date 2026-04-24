@@ -28,6 +28,7 @@ interface PlayerControllerProps {
 
 export interface PlayerControllerHandle {
   saveTranscriptChanges: () => Promise<boolean>;
+  getTranscriptData: () => TranscriptData | null;
 }
 
 const PlayerController = forwardRef<PlayerControllerHandle, PlayerControllerProps>(function PlayerController({
@@ -120,7 +121,8 @@ const PlayerController = forwardRef<PlayerControllerHandle, PlayerControllerProp
 
   useImperativeHandle(ref, () => ({
     saveTranscriptChanges,
-  }), [saveTranscriptChanges]);
+    getTranscriptData: () => editableTranscription || transcription,
+  }), [editableTranscription, saveTranscriptChanges, transcription]);
 
   return (
     <>

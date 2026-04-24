@@ -16,6 +16,7 @@ from flask import Flask, jsonify
 from flask_cors import CORS
 from api.routes.dispatchers import dispatchers_bp
 from api.routes.files import files_bp
+from api.routes.regrade import regrade_bp
 from api.routes.upload import upload_bp
 from api.services.whisperx_transcriber import initialize_transcriber
 from api.services.ollama_handler import initialize_ollama, check_ollama_ready
@@ -45,6 +46,7 @@ def create_app():
     app.register_blueprint(dispatchers_bp, url_prefix='/api')
     app.register_blueprint(upload_bp, url_prefix='/api')
     app.register_blueprint(files_bp, url_prefix='/api')
+    app.register_blueprint(regrade_bp, url_prefix='/api')
     
     # Add error handler to catch all unhandled errors
     @app.errorhandler(Exception)
