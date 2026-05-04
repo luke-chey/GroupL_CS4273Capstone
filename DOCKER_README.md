@@ -25,18 +25,18 @@ The app can run offline after its Docker images and model-cache volumes have bee
 
 ```text
 CallAnalysisTool/
-  .env  # Not tracked in git
-  docker-compose.yml
-  export_all.sh
-  import_all.sh
-  backend/
-    Dockerfile.flask
-    Dockerfile.ollama
-    Dockerfile.whisper
-    data/
-    output/
-  frontend/
-    Dockerfile.node
+├── .env  # Not tracked in git
+├── docker-compose.yml
+├── export_all.sh
+├── import_all.sh
+├── backend/
+│   ├── Dockerfile.flask
+│   ├── Dockerfile.ollama
+│   ├── Dockerfile.whisper
+│   ├── data/
+│   └── output/
+└── frontend/
+    └── Dockerfile.node
 ```
 
 Run all Docker Compose commands from `CallAnalysisTool/`, not the repository root.

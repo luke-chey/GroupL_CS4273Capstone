@@ -1,48 +1,22 @@
-# TODO List - Call Analysis Tool
+# TODO
 
-## High Priority
+## Priority Guide
 
-### 1. Internal Hosting Setup
-Get the website fully hosted internally (on IT servers and accessible by dispatch users).
-- **Issue**: The site is currently accessible on the EMDQA server, but the frontend file browser opens on the users local machine. This mismatch runs into permission issues (if the user selects a file hosted on the server) or it doesn't upload the file (if the user selects a zip file on their local machine).
-- **Status**: Pending
-- **Priority**: High
+| Priority | Meaning |
+| --- | --- |
+| High | Important for stability, maintainability, or near-term usability |
+| Medium | Valuable next-step work, but not blocking day-to-day use |
+| Low | Useful improvement or exploratory work |
 
-### 2. Offline NLP Model Installation
-The NLP model is still not fully offline when building the docker image. It requires installation (internet connected) outside of it. This needs to be updated.
-- **Status**: Pending
-- **Priority**: High
+## Tasks
 
-### 3. Docker Image Optimization
-Optimize the Docker image. It's far too large and uses 50GB+ of memory atm.
-- **Status**: Pending
-- **Priority**: High
-
-## Medium Priority
-
-### 4. Speaker Separation Model Integration
-Speaker separation should be using the NLP model as well. There were performance issues after building the Docker image, so it currently uses an inferior non-ML method.
-- **Status**: Pending
-- **Priority**: Medium
-
-### 5. Multiple Zip File Processing
-The frontend/backend still needs multiple zip file selection and processing.
-- **Status**: Pending
-- **Priority**: Medium
-
-## Future Enhancements
-
-### 6. Model Server Separation
-All of the models, especially the larger Llama and WhisperX ones, should be separated out of the Docker image and be running 24/7 on their own server. This would allow more projects to be created using the same resources, and avoid every future project using a different set of models.
-- **Status**: Pending
-- **Priority**: Medium
-
-### 7. GPU Hardware Upgrade Path
-The beefiest model in this project is the Ollama SLM (Small Language Model). I don't know if it's possible to run a model larger than 8B parameters with the current non-GPU hardware resources. This is a future upgrade path.
-- **Status**: Pending
-- **Priority**: Low
-
-### 8. NLP Model Capability Assessment
-A full SML might not be needed for this project, the smaller NLP model may be able to do both the speaker separation and grading. It currently only summarizes the grading/transcript.
-- **Status**: Pending
-- **Priority**: Low
+| Priority | Size Estimate | Task | Notes |
+| --- | ---: | --- | --- |
+| High | Large | Clean up backend and frontend code | Reduce duplicate route logic, consolidate shared helpers, simplify large frontend components, and make the code easier to test and maintain. |
+| High | Small | Add back a backend health route | Restore a simple endpoint such as `GET /api/health` for Docker checks, deployment smoke tests, and frontend/backend connectivity debugging. |
+| High | Extra Large | Add users, roles, and admin views | Basic users should only view records. Admin users should be able to edit transcripts, override grades, regrade records, manage `nature_codes_master.json`, and edit AI prompt text through the UI. |
+| Medium | Large | Re-add the full testing suite | Restore automated tests for routes, services, upload/regrade workflows, and frontend-critical API behavior. This will require adding main methods or test-friendly entrypoints for routes and some service modules. |
+| Medium | Medium | Improve long-running frontend workflows | Uploading, transcription, grading, and regrading should continue while users navigate the app. Add better job/progress tracking instead of locking the user into one page. |
+| Medium | Medium | Revisit record naming and unique identifiers | Replace or supplement dispatcher names in paths with stable identifiers such as employee ID, call ID, or generated record IDs. Keep display names separate from storage identifiers. |
+| Medium | Large | Move app output storage outside the app folder | Store audio, transcripts, CDRs, and grades on a separate server or storage service instead of `backend/output/`. Add an abstraction layer so routes do not depend directly on local filesystem paths. |
+| Low | Medium | Experiment with larger AI models | Test larger Ollama-compatible models for nature-code detection and per-question grading accuracy. Compare accuracy, latency, memory use, and deployment requirements against `llama3.1:8b`. |
