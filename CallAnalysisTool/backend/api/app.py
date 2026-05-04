@@ -1,19 +1,15 @@
 #!/usr/bin/env python3
-"""
-Backend API for EMS Call Analysis Tool
-Flask server that provides grading endpoints for 911 call transcripts
-"""
 
+# Standard library
 import os
 import sys
+
+# Third-party
 from pathlib import Path
-
-# Add the backend directory to Python path so imports work
-backend_dir = Path(__file__).parent.parent
-sys.path.insert(0, str(backend_dir))
-
-from flask import Flask, jsonify
+from flask import Flask
 from flask_cors import CORS
+
+# Local modules
 from api.routes.dispatchers import dispatchers_bp
 from api.routes.files import files_bp
 from api.routes.regrade import regrade_bp
@@ -21,15 +17,19 @@ from api.routes.upload import upload_bp
 from api.services.whisperx_transcriber import initialize_transcriber
 from api.services.ollama_handler import initialize_ollama, check_ollama_ready
 
+# Add the backend directory to Python path so imports work
+backend_dir = Path(__file__).parent.parent
+sys.path.insert(0, str(backend_dir))
+
 
 def _env_flag(name: str, default: bool = False) -> bool:
+    """Helper function to get environmental variable truthyness"""
     value = os.getenv(name)
     if value is None:
         return default
     return value.lower() in ("true", "1", "yes", "on")
 
 def create_app():
-    """Application factory pattern"""
     app = Flask(__name__)
     
     # CORS configuration - allow frontend to connect
@@ -47,32 +47,15 @@ def create_app():
     app.register_blueprint(upload_bp, url_prefix='/api')
     app.register_blueprint(files_bp, url_prefix='/api')
     app.register_blueprint(regrade_bp, url_prefix='/api')
-    
-    # Add error handler to catch all unhandled errors
-    @app.errorhandler(Exception)
-    def handle_exception(e):
-        import traceback
-        import sys
-        error_traceback = traceback.format_exc()
-        sys.stderr.write(f"\n{'='*60}\n")
-        sys.stderr.write(f"UNHANDLED ERROR in Flask app: {str(e)}\n")
-        sys.stderr.write(f"Traceback:\n{error_traceback}\n")
-        sys.stderr.write(f"{'='*60}\n")
-        sys.stderr.flush()
-        print(f"\n{'='*60}\nUNHANDLED ERROR: {str(e)}\nTraceback:\n{error_traceback}\n{'='*60}\n", flush=True)
-        return jsonify({
-            'error': f'Internal server error: {str(e)}',
-            'traceback': error_traceback if app.debug else None
-        }), 500
 
     # In containerized environment, defer model initialization to avoid startup issues
     # Models will be initialized on first request if not already loaded
     if not _env_flag("DOCKER_CONTAINER"):
         try:
-            # Initialize the transcriber (Preloads the WhisperX model on CPU)
+            # Initialize the transcriber model
             initialize_transcriber()
 
-            # Initialize Ollama (Preloads the llama3.1:8b model)
+            # Initialize Ollama server
             initialize_ollama()
         except Exception as e:
             print(f"Warning: Model initialization failed at startup: {e}")
@@ -106,7 +89,5 @@ if __name__ == '__main__':
         print(f"Files endpoint: http://localhost:{port}/api/files/<filename>")
         print("=" * 60)
 
-        
-    
     app.run(host='0.0.0.0', port=port, debug=debug)
 

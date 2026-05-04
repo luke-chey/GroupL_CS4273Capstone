@@ -1,16 +1,15 @@
-"""
-WhisperX Transcription Module
-"""
+# Wraps WhisperX model loading, audio transcription, and CLI batch transcription helpers.
 
+# Standard library
 import os
 import time
-from pathlib import Path
 from datetime import datetime
-from dataclasses import dataclass, asdict
 from typing import Dict, Optional
-import sys
 import json
-import argparse
+
+# Third-party
+from pathlib import Path
+from dataclasses import dataclass, asdict
 import torch
 
 
@@ -38,6 +37,7 @@ class TranscriptionConfig:
     batch_size: int = 32  # GPU can handle mor
 
     def to_dict(self):
+        """Return this transcription configuration as a dictionary."""
         return asdict(self)
 
 
@@ -45,6 +45,7 @@ class WhisperXTranscriber:
     """WhisperX transcription wrapper"""
 
     def __init__(self, config: TranscriptionConfig = None):
+        """Create a transcriber with lazy-loaded WhisperX model state."""
         self.config = config or TranscriptionConfig()
         self.model = None
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -300,65 +301,3 @@ def transcribe_to_json(audio_files, output_dir=None, config=None):
     print(f"\n{'=' * 80}")
     print(f"Completed! Processed {len(audio_files)} file(s)")
     print(f"{'=' * 80}")
-
-
-def main():
-    parser = argparse.ArgumentParser(
-        description="Transcribe .wav files to JSON using WhisperX (CPU only)",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  # Transcribe single file
-  python whisperx_transcriber.py audio.wav
-
-  # Transcribe all .wav files in a directory
-  python whisperx_transcriber.py test-audio/
-
-  # Transcribe multiple files
-  python whisperx_transcriber.py file1.wav file2.wav file3.wav
-
-  # Specify output directory
-  python whisperx_transcriber.py audio.wav --output-dir transcriptions/
-
-  # Use different model size
-  python whisperx_transcriber.py audio.wav --model small
-        """
-    )
-
-    parser.add_argument('inputs', nargs='+',
-                        help='Audio file(s) or directory containing .wav files')
-    parser.add_argument('--output-dir', '-o',
-                        help='Output directory for JSON files (default: same as input)')
-    parser.add_argument('--model', default='large-v3',
-                        choices=['tiny', 'base', 'small', 'medium', 'large', 'large-v2', 'large-v3'],
-                        help='WhisperX model size (default: large-v3)')
-    parser.add_argument('--language', default='en',
-                        help='Language code (default: en)')
-    parser.add_argument('--no-word-timestamps', action='store_true',
-                        help='Disable word-level timestamps')
-    parser.add_argument('--batch-size', type=int, default=16,
-                        help='Batch size for processing (default: 16)')
-
-    args = parser.parse_args()
-
-    # Find all wav files
-    audio_files = find_wav_files(args.inputs)
-
-    if not audio_files:
-        print("Error: No .wav files found!")
-        sys.exit(1)
-
-    # Create configuration
-    config = TranscriptionConfig(
-        model_size=args.model,
-        language=args.language,
-        word_timestamps=not args.no_word_timestamps,
-        batch_size=args.batch_size
-    )
-
-    # Transcribe
-    transcribe_to_json(audio_files, args.output_dir, config)
-
-
-if __name__ == "__main__":
-    main()

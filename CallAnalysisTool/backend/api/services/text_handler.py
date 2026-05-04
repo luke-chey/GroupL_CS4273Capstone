@@ -1,15 +1,12 @@
-# Jaiden Sizemore
-# CS4273 Group G
-# Last Updated 03/28/2026: Consolidated transcript and CDR text helpers
+# Converts transcript JSON into text and extracts record metadata from CDR files.
 
-# Usage: python text_handler.py <filepath.json>
-
+# Standard library
 import json
-import os
 import re
-import sys
+from typing import Optional, Tuple
+
+# Third-party
 from pathlib import Path
-from typing import Dict, Optional, Tuple, Any
 
 
 def json_to_text(file_path = None, json_data = None):
@@ -94,6 +91,7 @@ IGNORE_LIST = [
 
 
 def _format_parent_question_id(question_id: str, parent_question_id: str) -> str:
+    """Format parent question IDs with the correct case-entry or nature-code prefix."""
     if parent_question_id.startswith(("CE_", "NC_")):
         return parent_question_id
 
@@ -102,6 +100,7 @@ def _format_parent_question_id(question_id: str, parent_question_id: str) -> str
 
 
 def format_questions_for_prompt(questions_dict):
+    """Format question metadata into compact prompt lines."""
     lines = []
 
     for qid, q in questions_dict.items():
@@ -142,22 +141,3 @@ def format_questions_for_prompt(questions_dict):
         lines.append(" ".join(parts))
 
     return "\n".join(lines)
-
-def main():
-    if len(sys.argv) != 2:
-        print("Usage: python text_handler.py <filepath.json>")
-        print("Example: python text_handler.py transcriptions/example.json")
-        sys.exit(1)
-
-    filename = sys.argv[1]
-    if not os.path.exists(filename):
-        print(f"Error: File '{filename}' does not exist.")
-        sys.exit(1)
-
-    return json_to_text(file_path=filename)
-
-
-if __name__ == "__main__":
-    result = main()
-    if result:
-        print(result)

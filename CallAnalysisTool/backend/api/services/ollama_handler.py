@@ -1,14 +1,11 @@
-import json
-import os
-import re
-import tempfile
-import time
-from datetime import datetime
-from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+# Manages Ollama model initialization and prompt/chat request helpers.
 
+# Standard library
+import os
+import time
+
+# Third-party
 import ollama
-import pandas as pd
 
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1:8b")
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
@@ -77,6 +74,7 @@ def initialize_ollama() -> None:
 
 
 def prompt_ollama(prompt, model = OLLAMA_MODEL, options = OLLAMA_DEFAULT_OPTIONS):
+    """Send a single prompt to Ollama and return the generated text."""
     if not _ollama_initialized:
         try:
             initialize_ollama()
@@ -101,6 +99,7 @@ def prompt_ollama(prompt, model = OLLAMA_MODEL, options = OLLAMA_DEFAULT_OPTIONS
 
 
 def chat_ollama(messages, model=OLLAMA_MODEL, options=OLLAMA_DEFAULT_OPTIONS):
+    """Send chat messages to Ollama and return the assistant content."""
     if not _ollama_initialized:
         try:
             initialize_ollama()

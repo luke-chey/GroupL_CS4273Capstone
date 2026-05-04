@@ -1,3 +1,5 @@
+# Builds reusable prompts for AI grading and nature-code classification.
+
 # Standard library
 import textwrap
 from typing import Dict, Any
@@ -11,6 +13,7 @@ from api.services.text_handler import json_to_text
 NATURE_KEYWORDS_MASTER_PATH = Path("data") / "nature_keywords_master.json"
 
 def _format_question_sequence(questions_dict: Dict[str, Dict[str, Any]]) -> str:
+    """Format protocol questions into a compact sequence for the grading prompt."""
     lines = []
 
     for q_id, q in questions_dict.items():
@@ -26,6 +29,7 @@ def _format_question_sequence(questions_dict: Dict[str, Dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 def get_grading_system_prompt(transcript_text, questions_dict):
+    """Build the system prompt used for per-question transcript grading."""
     return textwrap.dedent(f"""
         {GRADING_BASE_PROMPT}
 
@@ -44,7 +48,9 @@ def get_grading_system_prompt(transcript_text, questions_dict):
 
 
 def get_single_question_prompt(question: Dict[str, Any]) -> str:
+    """Build the user prompt for grading one protocol question."""
     def val(x):
+        """Render missing prompt metadata as a stable placeholder."""
         return "None" if x is None else str(x)
 
     recap = textwrap.dedent("""
@@ -82,6 +88,7 @@ def get_single_question_prompt(question: Dict[str, Any]) -> str:
     return "\n".join([recap, core_info, metadata])
 
 def get_nature_code_prompt(transcript_path, nature_codes_master):
+    """Build the prompt used to classify a transcript into a nature code."""
     # Load transcript text
     transcript_text = json_to_text(file_path=transcript_path)
 

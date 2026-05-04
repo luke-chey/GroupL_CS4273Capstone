@@ -1,3 +1,5 @@
+# Loads nature-code metadata, questions, and AI-based transcript classification helpers.
+
 # Standard library
 import json
 from pathlib import Path
@@ -12,6 +14,7 @@ NATURE_CODE_MAX_RETRIES = 5
 FALLBACK_NATURE_CODE_ID = "0"
 
 def get_nature_codes_master():
+    """Load the master nature-code metadata file."""
     # Load nature_codes_master.json
     with open(NATURE_CODES_MASTER_PATH, "r", encoding="utf-8") as f:
         nature_codes_master = json.load(f)
@@ -19,6 +22,7 @@ def get_nature_codes_master():
     return nature_codes_master
 
 def load_nature_code_questions(nature_code_id, include_case_entry=True):
+    """Load case-entry and selected nature-code grading questions."""
     nature_codes_master = get_nature_codes_master()
 
     nature_code_id = str(nature_code_id)
@@ -53,6 +57,7 @@ def load_nature_code_questions(nature_code_id, include_case_entry=True):
 
 
 def _extract_nature_code_response(response, nature_codes_master):
+    """Parse a bracketed nature-code ID and reasoning from an AI response."""
     if not response:
         return None, None, ""
 
@@ -70,6 +75,7 @@ def _extract_nature_code_response(response, nature_codes_master):
     return nature_code_id, nature_code_name, reasoning
 
 def detect_nature_code(transcript_path):
+    """Detect the best matching nature code for a transcript using Ollama."""
     # Import here to avoid circular imports
     from api.services.prompts import get_nature_code_prompt
 

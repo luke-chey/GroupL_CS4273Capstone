@@ -1,12 +1,18 @@
+# Aligns transcripts with audio, diarizes speakers, and writes dispatcher/caller transcripts.
+
+# Standard library
 import json
 import os
+import inspect
+
+# Third-party
 import whisperx
 import torch
 import gc
 from whisperx.diarize import DiarizationPipeline
-import inspect
 
 def in_docker():
+    """Return whether the service appears to be running inside Docker."""
     return os.path.exists("/.dockerenv")
 
 def normalize_dispatcher_name(name):
@@ -195,6 +201,7 @@ def speaker_separation(audio_path, transcript_path, output_dir, dispatcher_name=
 
 
 def main():
+    """CLI placeholder for manually invoking speaker-separation diagnostics."""
     # We don't need a main method unless we intend to test via the CLI
     print("speaker_separation.main() called")
 
