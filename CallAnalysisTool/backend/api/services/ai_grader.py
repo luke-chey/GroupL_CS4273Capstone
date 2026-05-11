@@ -1,12 +1,16 @@
-"""AI-based transcript grading helpers with a single file-based entrypoint."""
+# Grades transcripts against EMS protocol questions using AI responses and scoring helpers.
 
+# Standard library
 import json
 import os
 import re
 from datetime import datetime
+
+# Third-party
 from pathlib import Path
 from typing import Any, Dict, Tuple
 
+# Local modules
 from api.services.prompts import get_grading_system_prompt, get_single_question_prompt
 from api.services.ollama_handler import chat_ollama
 from api.services.nature_codes import load_nature_code_questions, get_nature_codes_master
@@ -28,10 +32,12 @@ GRADE_KEY = {
 
 
 def _questions_list_to_dict(questions: list[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    """Convert a list of question records into a Question_ID keyed dictionary."""
     return {q["Question_ID"]: q for q in questions if q.get("Question_ID")}
 
 
 def _extract_grade_and_reasoning(response: str) -> Tuple[str | None, str]:
+    """Parse a bracketed grade code and reasoning text from an AI response."""
     if not response:
         return None, ""
 
@@ -46,6 +52,7 @@ def _extract_grade_and_reasoning(response: str) -> Tuple[str | None, str]:
 
 
 def calculate_final_grade(grades: Dict[str, str], questions_dict: Dict[str, Dict[str, Any]]) -> float:
+    """Calculate the final percentage score from grade codes and question metadata."""
     total_points = 0
     earned_points = 0.0
 
@@ -157,6 +164,7 @@ def format_grades(
 
 
 def calculate_percentage(grades: Dict[str, Any], questions_dict: Dict[str, Dict[str, Any]]) -> float:
+    """Calculate a rounded percentage from formatted grade records."""
     if not grades or not questions_dict:
         return 0.0
 
@@ -165,6 +173,7 @@ def calculate_percentage(grades: Dict[str, Any], questions_dict: Dict[str, Dict[
 
 
 def _get_nature_code_name(nature_code_id: str) -> str:
+    """Look up the display name for a nature code ID."""
     nature_codes_master = get_nature_codes_master()
     return nature_codes_master.get(str(nature_code_id), {}).get("nature_code_name", "Unknown")
 

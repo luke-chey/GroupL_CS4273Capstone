@@ -1,12 +1,15 @@
+# Standard library
 import json
 import shutil
 import uuid
+
+# Third-party
 from pathlib import Path
 from urllib.parse import unquote
-
 from flask import Blueprint, jsonify
 from pathvalidate import sanitize_filepath, sanitize_filename
 
+# Local modules
 from api.services.ai_grader import grade_transcript_file
 from api.services.nature_codes import get_nature_codes_master
 
@@ -31,11 +34,9 @@ def extract_nature_code_id(nature_code_value):
 
     return str(nature_code_value)
 
-
 def get_nature_code_name(nature_code_id):
     nature_codes_master = get_nature_codes_master()
     return nature_codes_master.get(str(nature_code_id), {}).get("nature_code_name", "")
-
 
 def decode_filename_parts(filename):
     """
@@ -46,7 +47,6 @@ def decode_filename_parts(filename):
     name_part, ext = decoded_filename.rsplit(".", 1)
     parts = name_part.split("_")
     return decoded_filename, name_part, ext, parts
-
 
 def decode_record_identifier(agent, record_identifier):
     """
@@ -62,7 +62,6 @@ def decode_record_identifier(agent, record_identifier):
 
     date, time, nature = parts
     return decoded_agent, decoded_identifier, date, time, nature
-
 
 def build_record_paths(agent_name, date, time, nature_code_name, filename_suffixes):
     """
@@ -87,7 +86,6 @@ def build_record_paths(agent_name, date, time, nature_code_name, filename_suffix
         )
         for key, (suffix, extension) in filename_suffixes.items()
     }
-
 
 def rename_record_files(agent_name, date, time, old_record_dir, nature_code_name):
     """
@@ -128,7 +126,6 @@ def rename_record_files(agent_name, date, time, old_record_dir, nature_code_name
         "record_dir": str(new_record_dir),
         "renamed_files": renamed_files,
     }
-
 
 @regrade_bp.route("/regrade/<string:agent>/<string:record_identifier>", methods=["POST"])
 def regrade_record(agent, record_identifier):

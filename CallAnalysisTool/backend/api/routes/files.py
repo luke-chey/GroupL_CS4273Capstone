@@ -1,13 +1,17 @@
+# Standard library
 import json
 import shutil
 from datetime import datetime
+
+# Third-party
 from pathlib import Path
 from urllib.parse import unquote
-
 from flask import Blueprint, jsonify, request, send_from_directory
+from pathvalidate import sanitize_filepath, sanitize_filename
+
+# Local modules
 from api.services.ai_grader import calculate_final_grade
 from api.services.nature_codes import get_nature_codes_master, load_nature_code_questions
-from pathvalidate import sanitize_filepath, sanitize_filename
 
 files_bp = Blueprint('files', __name__)
 
@@ -36,7 +40,6 @@ def decode_filename_parts(filename):
     parts = name_part.split('_')
     return decoded_filename, name_part, ext, parts
 
-
 def extract_nature_code_id(nature_code_value):
     """
     Normalize a stored nature code value to its string ID.
@@ -53,6 +56,9 @@ def extract_nature_code_id(nature_code_value):
 
 
 def get_nature_code_name(nature_code_id):
+    """
+    Look up the display name for a nature code ID.
+    """
     nature_codes_master = get_nature_codes_master()
     return nature_codes_master.get(str(nature_code_id), {}).get("nature_code_name", "")
 
@@ -121,6 +127,139 @@ def rename_record_files(agent_name, date, time, old_record_dir, nature_code_name
         "record_dir": str(new_record_dir),
         "renamed_files": renamed_files,
     }
+
+
+def validate_replacement_payload(description, replacement_payload):
+    """
+    Validate the JSON payload for the supported PUT file descriptions.
+    """
+    if description == "transcript" and "segments" not in replacement_payload:
+        return "Transcript must include 'segments'"
+
+    if description == "grades" and not any(
+        key in replacement_payload for key in ("grades", "per_question")
+    ):
+        return "Grades file must include 'grades' or 'per_question'"
+
+    return None
+
+
+def build_questions_dict(nature_code):
+    """
+    Load grade questions for a nature code and index them by question ID.
+    """
+    questions_list = load_nature_code_questions(nature_code)
+    if not questions_list:
+        return None
+
+    return {
+        question["Question_ID"]: question
+        for question in questions_list
+        if question.get("Question_ID")
+    }
+
+
+def normalize_grades_payload(grades_payload):
+    """
+    Normalize edited grade entries so grade calculation has stable fields.
+    """
+    normalized_grades_payload = {}
+    for qid, grade_data in grades_payload.items():
+        grade_data = grade_data or {}
+        code = str(grade_data.get("code", "2"))
+        if code not in GRADE_KEY:
+            code = "2"
+
+        normalized_grades_payload[qid] = {
+            **grade_data,
+            "code": code,
+            "status": grade_data.get("status") or GRADE_KEY[code],
+            "reasoning": grade_data.get("reasoning", ""),
+        }
+
+    return normalized_grades_payload
+
+
+def build_grade_summary(normalized_grades_payload):
+    """
+    Build summary counts for a normalized grades payload.
+    """
+    total_questions = len(normalized_grades_payload)
+    case_entry_count = sum(1 for qid in normalized_grades_payload if qid.startswith("CE_"))
+    nature_code_count = sum(1 for qid in normalized_grades_payload if qid.startswith("NC_"))
+    questions_asked_correctly = sum(
+        1 for grade_data in normalized_grades_payload.values()
+        if grade_data.get("code") in {"1", "6"}
+    )
+
+    return {
+        "total_questions": total_questions,
+        "case_entry_questions": case_entry_count,
+        "nature_code_questions": nature_code_count,
+        "questions_asked_correctly": questions_asked_correctly,
+        "questions_missed": total_questions - questions_asked_correctly,
+    }
+
+
+def update_grades_payload(replacement_payload, current_nature):
+    """
+    Recalculate grades and update grade metadata for an edited grades file.
+    """
+    grades_payload = replacement_payload.get("grades") or replacement_payload.get("per_question") or {}
+    nature_code = extract_nature_code_id(replacement_payload.get("detected_nature_code"))
+
+    if not nature_code:
+        return None, None, "Grades file must include 'detected_nature_code'"
+
+    questions_dict = build_questions_dict(nature_code)
+    if not questions_dict:
+        return None, None, f"Could not load questions for nature code '{nature_code}'"
+
+    normalized_grades_payload = normalize_grades_payload(grades_payload)
+    grade_codes = {
+        qid: grade_data["code"]
+        for qid, grade_data in normalized_grades_payload.items()
+    }
+    percentage = round(calculate_final_grade(grade_codes, questions_dict), 1)
+
+    replacement_payload["detected_nature_code"] = nature_code
+    replacement_payload["grades"] = normalized_grades_payload
+    if "per_question" in replacement_payload:
+        replacement_payload["per_question"] = normalized_grades_payload
+    replacement_payload["grade_percentage"] = percentage
+    replacement_payload.update(build_grade_summary(normalized_grades_payload))
+    replacement_payload["timestamp"] = datetime.now().isoformat() + "Z"
+
+    new_nature_code_name = get_nature_code_name(nature_code)
+    if new_nature_code_name and new_nature_code_name != current_nature:
+        replacement_payload["nature_code_reasoning"] = (
+            "This Nature Code was manually selected before regrading.."
+        )
+
+    return replacement_payload, new_nature_code_name, None
+
+
+def rename_record_if_nature_changed(filename, file_path, record_context, new_nature_code_name):
+    """
+    Rename the record folder and files when a grade edit changes the nature code.
+    """
+    if not new_nature_code_name or new_nature_code_name == record_context["nature"]:
+        return filename, file_path, None
+
+    rename_result = rename_record_files(
+        agent_name=record_context["agent"],
+        date=record_context["date"],
+        time=record_context["time"],
+        old_record_dir=record_context["record_dir"],
+        nature_code_name=new_nature_code_name,
+    )
+
+    if rename_result and filename in rename_result["renamed_files"]:
+        filename = rename_result["renamed_files"][filename]
+        file_path = Path(rename_result["record_dir"]) / filename
+
+    return filename, file_path, rename_result
+
 
 def serve_audio(relative_path):
     """
@@ -221,9 +360,16 @@ def put_file(filename):
         time = parts[2]
         nature = parts[3]
         description = "_".join(parts[4:]).lower()
+        record_context = {
+            "agent": agent,
+            "date": date,
+            "time": time,
+            "nature": nature,
+        }
 
         # Check that file exists
         record_dir = base_dir / agent / f"{date}_{time}_{nature}"
+        record_context["record_dir"] = record_dir
         file_path = record_dir / filename
         if not file_path.exists():
             return jsonify({'error': 'File not found'}), 404
@@ -240,94 +386,28 @@ def put_file(filename):
         replacement_payload = request.get_json(silent=True)
         if replacement_payload is None:
             return jsonify({'error': 'Invalid JSON body'}), 400
-        
-        if description == "transcript" and "segments" not in replacement_payload:
-            return jsonify({"error": "Transcript must include 'segments'"}), 400
 
-        if description == "grades" and not any(
-            key in replacement_payload for key in ("grades", "per_question")
-        ):
-            return jsonify({"error": "Grades file must include 'grades' or 'per_question'"}), 400
+        validation_error = validate_replacement_payload(description, replacement_payload)
+        if validation_error:
+            return jsonify({"error": validation_error}), 400
 
         if description == "grades":
             print(f"Original grade: {replacement_payload.get('grade_percentage')}")
 
-            grades_payload = replacement_payload.get("grades") or replacement_payload.get("per_question") or {}
-            nature_code = extract_nature_code_id(replacement_payload.get("detected_nature_code"))
-
-            if not nature_code:
-                return jsonify({"error": "Grades file must include 'detected_nature_code'"}), 400
-
-            questions_list = load_nature_code_questions(nature_code)
-            if not questions_list:
-                return jsonify({"error": f"Could not load questions for nature code '{nature_code}'"}), 400
-
-            questions_dict = {
-                question["Question_ID"]: question
-                for question in questions_list
-                if question.get("Question_ID")
-            }
-
-            normalized_grades_payload = {}
-            for qid, grade_data in grades_payload.items():
-                grade_data = grade_data or {}
-                code = str(grade_data.get("code", "2"))
-                if code not in GRADE_KEY:
-                    code = "2"
-
-                normalized_grades_payload[qid] = {
-                    **grade_data,
-                    "code": code,
-                    "status": grade_data.get("status") or GRADE_KEY[code],
-                    "reasoning": grade_data.get("reasoning", ""),
-                }
-
-            grade_codes = {
-                qid: grade_data["code"]
-                for qid, grade_data in normalized_grades_payload.items()
-            }
-
-            percentage = round(calculate_final_grade(grade_codes, questions_dict), 1)
-            print(f"New grade: {percentage}")
-            total_questions = len(normalized_grades_payload)
-            case_entry_count = sum(1 for qid in normalized_grades_payload if qid.startswith("CE_"))
-            nature_code_count = sum(1 for qid in normalized_grades_payload if qid.startswith("NC_"))
-            questions_asked_correctly = sum(
-                1 for grade_data in normalized_grades_payload.values()
-                if grade_data.get("code") in {"1", "6"}
+            replacement_payload, new_nature_code_name, grade_error = update_grades_payload(
+                replacement_payload,
+                nature,
             )
-            questions_missed = total_questions - questions_asked_correctly
+            if grade_error:
+                return jsonify({"error": grade_error}), 400
 
-            replacement_payload["detected_nature_code"] = nature_code
-            replacement_payload["grades"] = normalized_grades_payload
-            if "per_question" in replacement_payload:
-                replacement_payload["per_question"] = normalized_grades_payload
-            replacement_payload["grade_percentage"] = percentage
-            replacement_payload["total_questions"] = total_questions
-            replacement_payload["case_entry_questions"] = case_entry_count
-            replacement_payload["nature_code_questions"] = nature_code_count
-            replacement_payload["questions_asked_correctly"] = questions_asked_correctly
-            replacement_payload["questions_missed"] = questions_missed
-            replacement_payload["timestamp"] = datetime.now().isoformat() + "Z"
-
-            new_nature_code_name = get_nature_code_name(nature_code)
-            if new_nature_code_name and new_nature_code_name != nature:
-                replacement_payload["nature_code_reasoning"] = (
-                    "This Nature Code was manually selected before regrading.."
-                )
-            rename_result = None
-            if new_nature_code_name and new_nature_code_name != nature:
-                rename_result = rename_record_files(
-                    agent_name=agent,
-                    date=date,
-                    time=time,
-                    old_record_dir=record_dir,
-                    nature_code_name=new_nature_code_name,
-                )
-
-                if rename_result and filename in rename_result["renamed_files"]:
-                    filename = rename_result["renamed_files"][filename]
-                    file_path = Path(rename_result["record_dir"]) / filename
+            print(f"New grade: {replacement_payload.get('grade_percentage')}")
+            filename, file_path, rename_result = rename_record_if_nature_changed(
+                filename,
+                file_path,
+                record_context,
+                new_nature_code_name,
+            )
         
         with open(file_path, "w", encoding="utf-8") as f:
             json.dump(replacement_payload, f, indent=2, ensure_ascii=False)
@@ -351,6 +431,9 @@ def put_file(filename):
 
 @files_bp.route('/files/nature-codes', methods=['GET'])
 def get_nature_codes():
+    """
+    Return the available nature code IDs and display names.
+    """
     try:
         nature_codes_master = get_nature_codes_master()
 
@@ -373,6 +456,9 @@ def get_nature_codes():
 
 @files_bp.route('/files/nature-codes/<nature_code_id>', methods=['GET'])
 def get_nature_code_questions(nature_code_id):
+    """
+    Return a blank grade scaffold for a selected nature code.
+    """
     try:
         nature_codes_master = get_nature_codes_master()
         nature_code_id = str(nature_code_id)

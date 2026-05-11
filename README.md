@@ -1,13 +1,18 @@
 # EMS Call Analysis Tool
 
-
 ## Project Overview
 
-This project supports the Norman Police Department by reviewing EMS call transcripts to ensure dispatchers ask the correct protocol questions. It can be used for quality assurance, training, and improving call consistency.
+The EMS Call Analysis Tool helps review emergency medical dispatch calls for protocol compliance. It supports a complete local workflow:
 
-We were provided with an Excel sheet containing the grading criteria that NPD currently uses, and our non‑AI grading approach is based directly on those rules. Transcripts are parsed and checked against this grading sheet to produce consistent, repeatable scoring.
+1. Upload a zipped call package or an existing transcript JSON.
+2. Transcribe audio with WhisperX when a WAV file is provided.
+3. Separate dispatcher and caller speech with diarization plus transcript heuristics.
+4. Detect the call's EMS nature code with a local Ollama model.
+5. Grade each required protocol question with local AI grading.
+6. Save the audio, CDR, transcript, and grades in a dispatcher-organized output folder.
+7. Review records in the frontend dashboard, edit transcripts or grades, change nature codes, regrade records, and print call reports.
 
-The focus for now is on a rule‑based implementation to match dispatcher questions with required prompts. Once this foundation is stable, AI‑based grading will be layered on in a later sprint. The repository now includes a dedicated parser module and aligned API endpoints to support both the non‑AI and AI graders.
+The system is designed for local processing. Audio, transcripts, and grades are stored in `CallAnalysisTool/backend/output/`.
 
 ---
 
@@ -18,78 +23,83 @@ The focus for now is on a rule‑based implementation to match dispatcher questi
   - [Technologies Used](#technologies-used)
   - [Backend Setup](#backend-setup)
   - [Frontend Setup](#frontend-setup)
-- [Key Feature](#key-feature)
+  - [Docker Setup](#docker-setup)
+- [Key Features](#key-features)
 - [Usage](#usage)
 - [How it Works](#how-it-works)
-- [Branches &amp; Modules](#branches--modules)
 - [API Endpoints](#api-endpoints)
+- [Configuration](#configuration)
 - [Testing](#testing)
-- [Branch-Specific Demos](#branch-specific-demos)
+- [Troubleshooting](#troubleshooting)
 - [Notes](#notes)
-- [Team Contributions](#team-contributions)
+- [Team Members](#team-members-spring-2026)
 
 ---
 
 ## Project Structure
 
-Consolidated view of the current code layout. Some folders live on feature branches and merge into `main`.
-
-```bash
-/CallAnalysisTool
-│
-├── backend/                         # Backend API and grading logic (Python/Flask)
-│   ├── data/
-│   │   └── EMS-Calltaking-QA.csv    # EMS protocol questions (source of truth for non-AI)
-│   ├── schema/
-│   │   └── models.py                # API models (legacy) / shared schemas
-│   ├── api/
-│   │   ├── routes/
-│   │   │   ├── transcription.py     # Transcription pipeline endpoints
-│   │   │   ├── grading.py           # Grading endpoints
-│   │   │   └── health.py            # Health check endpoints
-│   │   ├── services/
-│   │   │   ├── ai_grader.py         # AI grader wrapper for Flask
-│   │   │   ├── question_loader.py   # EMSQA.csv loader
-│   │   │   ├── rule_grader.py       # Rule-based grading (legacy)
-│   │   │   └── transcription_pipeline/  # Audio transcription pipeline
-│   │   │       ├── zip_processor.py     # Zip file extraction and CDR parsing
-│   │   │       ├── transcription/
-│   │   │       │   └── whisperx_transcriber.py  # WhisperX transcription service
-│   │   │       ├── speaker_separate/
-│   │   │       │   └── speaker_separation.py    # Speaker diarization (dispatcher/caller)
-│   │   │       └── audio-processing/            # Audio processing utilities
-│   │   └── app.py                   # Flask app factory (main entry point)
-│   ├── EMS_CallAnalyzer.py          # Legacy non-AI analyzer (S1 baseline)
-│   ├── api.py                       # Legacy API (/analyze) — maintained for backward compatibility
-│   ├── AIGrader.py                  # AI grading service (Ollama integration)
-│   ├── detect_naturecode.py         # Nature code detection
-│   ├── JSONTranscriptionParser.py   # Group B JSON format parser
-│   └── requirements.txt             # Backend dependencies
-│
-├── parser/                          # Transcript normalization into CallRecord schema
-│   ├── normalize.py
-│   ├── call_record_schema.py
-│   ├── speakers.py
-│   └── utils.py
-│
-├── tests/                           # Test suites (parser, rule grader, endpoints, llm smoke)
-│   ├── parser/
-│   ├── rule_grader/
-│   ├── endpoints/
-│   └── llm_grader/
-│
-└── frontend/                        # React/Next (Vite-compatible) frontend UI
-    ├── src/
-    │   ├── components/
-    │   │   ├── TranscriptUploader.jsx
-    │   │   ├── uploadFileContainer.tsx  # Audio file upload component
-    │   │   └── AnalysisResult.jsx
-    │   ├── pages/                   # Next.js pages (if applicable) or Vite routes
-    │   ├── App.jsx
-    │   ├── index.js
-    │   └── api.js                   # API helper
-    └── package.json
+```text
+GroupL_CS4273Capstone/
+├── README.md           # This file
+├── DOCKER_README.md    # Information pertaining to docker setup and offline deployment
+└── CallAnalysisTool/
+    ├── .env                # Environmental variables, not tracked in git
+    ├── docker-compose.yml  # Coordinates all of the dockerfiles, defines volumes
+    ├── export_all.sh       # Script to export docker container and volumes, see DOCKER_README.md
+    ├── import_all.sh       # Script to import docker container and volumes, see DOCKER_README.md
+    ├── backend/
+    │   ├── install_api_requirements.sh  # Script that verifies and installs API requirements 
+    │   ├── start_api.sh                 # Script to start the API
+    │   ├── requirements.txt             # Python requirements
+    │   ├── Dockerfile.flask             # Flask (api) docker configuration
+    │   ├── Dockerfile.ollama            # Ollama server docker configuration
+    │   ├── Dockerfile.whisper           # Whisper docker configuration
+    │   ├── api/
+    │   │   ├── app.py
+    │   │   ├── routes/
+    │   │   │   ├── dispatchers.py  # Routes to get dispather and record information
+    │   │   │   ├── files.py        # Routes to GET and PUT files
+    │   │   │   ├── regrade.py      # Route for regrading records
+    │   │   │   └── upload.py       # Route to grade new records
+    │   │   └── services/
+    │   │       ├── ai_grader.py               # Logic for AI grading
+    │   │       ├── nature_codes.py            # Helpers for using nature_codes_master.json
+    │   │       ├── ollama_handler.py          # Helpers for using ollama (prompt, chat)
+    │   │       ├── prompts.py                 # Helpers and constants for AI prompts
+    │   │       ├── speaker_separation.py      # Logic for speaker separation (diarization)
+    │   │       ├── text_handler.py            # Helpers for text files/JSON parsing and manipulation
+    │   │       └── whisperx_transcriber.py    # Helpers for using Whisper
+    │   ├── data/
+    │   │   ├── EMSQA.csv                   # Raw question and nature code data
+    │   │   └── nature_codes_master.json    # JSON-structured question and nature code data
+    │   ├── output/
+    │   │   ├── _tmp/            # Temp directory where intermediate processing happens
+    │   │   └── {dispatcher}/    # Folder for a given dispatcher, contains all their records
+    │   │       └── {date}_{time}_{nature_code}/   # Folder for a give record
+    │   └── tests/               # Testing stuff (outdated or broken)
+    │       ├── test_manual.sh
+    │       └── test_transcript.json
+    └── frontend/
+        ├── package.json      # Node packages
+        ├── Dockerfile.node   # Frontend docker configuration
+        ├── src/
+        │   ├── app/
+        │   │   ├── evaluate/
+        │   │   ├── help/
+        │   │   └── records/
+        │   ├── components/
+        │   ├── lib/
+        │   └── types/
+        └── public/
 ```
+
+Important runtime folders and files:
+
+- `backend/data/nature_codes_master.json`: nature-code metadata and protocol questions used by grading.
+- `backend/data/EMSQA.csv`: protocol source data retained with the backend data set.
+- `backend/output/`: saved call records, grouped by dispatcher and call folder.
+- `frontend/src/lib/api.ts`: frontend API client and endpoint mapping.
+- `CallAnalysisTool/.env`: Docker and runtime environment variables.
 
 ---
 
@@ -97,692 +107,567 @@ Consolidated view of the current code layout. Some folders live on feature branc
 
 ### Technologies Used
 
-* `Python 3.9+` – backend services and transcript processing
-* `Node.js 16+` and npm/yarn – frontend tooling
-* `React` – frontend web interface
-* `Next.js` – frontend framework for dev server/routing
-* `Flask` – backend framework for API handling (all endpoints: transcription, grading, health)
-* `WhisperX` – speech-to-text transcription (CPU-based, local inference)
-* `librosa` – audio feature extraction (MFCC) for speaker separation
-* `Ollama` – local LLM inference for AI grading (llama3.1:8b model)
-* `CSV protocols` – EMS protocol data reference
-* `EMS Protocol CSV file (Police-Fire-EMS-Calltaking-QA-Forms)` – reference material for dispatcher protocols
-
----
+- Python and Flask for the backend API.
+- Next.js 15, React 19, TypeScript, and Tailwind CSS for the frontend.
+- WhisperX for speech-to-text transcription and timestamp alignment.
+- pyannote/WhisperX diarization for speaker separation.
+- Ollama with `llama3.1:8b` for local nature-code detection and per-question grading.
+- Docker Compose for containerized and offline deployment.
 
 ### Backend Setup
 
-**Prerequisites**
+Run backend commands from `CallAnalysisTool/backend`.
 
-Install Ollama (required for AI grading):
+Prerequisites:
 
-```bash
-# Visit https://ollama.ai to install Ollama
-# Or on macOS:
-brew install ollama
+- Python available as `python3` or `python`.
+- ffmpeg available on `PATH`.
+- Ollama installed and available on `PATH`.
+- The `llama3.1:8b` model pulled in Ollama.
+- `HF_TOKEN` set when running local speaker diarization with pyannote model downloads.
 
-# Download the llama3.1:8b model
-ollama pull llama3.1:8b
+Basic setup:
 
-# Start Ollama server (in a separate terminal)
-# If error occurs, Ollama is already running
-ollama serve
-```
-
-Install FFMPEG (required for Whisper file loading):
-
-```bash
-# Using Windows (PowerShell)
-winget install ffmpeg
-
-# Using Mac (Homebrew)
-brew install ffmpeg
-```
-
-**Installation**
-
-Windows (PowerShell):
-
-```powershell
-cd CallAnalysisTool\backend
-
-# Either run the powershell installation script:
-.\install_api_requirements.ps1
-
-# Or do it manually:
-python -m venv venv
-.\venv\Scripts\activate
-pip install -r requirements.txt
-$env:PYTHONPATH = "."
-```
-
-Mac/Linux:
-
-```bash
+```sh
 cd CallAnalysisTool/backend
-python -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
+sh install_api_requirements.sh
+```
+
+The install script:
+
+- Checks for ffmpeg.
+- Pulls `llama3.1:8b` if Ollama is available.
+- Creates `venv/` if needed.
+- Installs `requirements.txt`.
+- Exports backend environment values inside the script. `start_api.sh` exports them again before launching Flask.
+
+Manual equivalent:
+
+```sh
+cd CallAnalysisTool/backend
+python3 -m venv venv
+. venv/bin/activate
+python -m pip install -r requirements.txt
 export PYTHONPATH=.
+export TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=true
+ollama pull llama3.1:8b
 ```
 
-**Running the Server**
+On Windows shells that expose the Windows venv layout, use:
 
-Windows (PowerShell):
-
-```powershell
-cd CallAnalysisTool\backend
-
-# Either run the powershell startup script:
-.\start_api.ps1
-
-# Or do it manually
-.\venv\Scripts\activate
-$env:PYTHONPATH = "."
-$env:TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD= "true"
-python .\api\app.py
+```sh
+. venv/Scripts/activate
 ```
 
-Mac/Linux:
+Start the backend:
 
-```bash
+```sh
 cd CallAnalysisTool/backend
+sh start_api.sh
+```
+
+Manual equivalent:
+
+```sh
+cd CallAnalysisTool/backend
+. venv/bin/activate
 export PYTHONPATH=.
 export TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=true
 python api/app.py
 ```
 
-Server will start on: **http://localhost:5001**
-
-**Notes:**
-
-- The first startup will download the WhisperX model (large-v3 by default), which may take several minutes. The model is preloaded at startup for faster transcription processing.
-- For AI grading, ensure Ollama is running with the llama3.1:8b model downloaded.
-- If you run into `FileNotFound` or similar exceptions, check that FFMPEG is installed and accessible in the current scope (wherever you're running the server at)
-- If you run into torch errors during the WhipserX transcription step, check the environmental variable `TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD` is to to `true`
-
----
+The backend listens on `http://localhost:5001` by default.
 
 ### Frontend Setup
 
-The frontend is built with **Next.js**.
+Run frontend commands from `CallAnalysisTool/frontend`.
 
-```bash
+The project is configured for pnpm, but npm can also install from the included lockfile.
+
+```sh
 cd CallAnalysisTool/frontend
-npm install
-# or
-yarn install
-# or
 pnpm install
-
-# Start development server
-npm run dev
-# or
-yarn dev
-# or
 pnpm dev
-
-# Open http://localhost:3000 in your browser
-
-# Or start without devtools (preview mode)
-npm run build
-npm run start
-# See terminal for correct localhost port
 ```
 
-The frontend connects to the backend API at `http://localhost:5001`.
+Alternative with npm:
+
+```sh
+cd CallAnalysisTool/frontend
+npm install
+npm run dev
+```
+
+Open:
+
+```text
+http://localhost:3000
+```
+
+Production-style local run:
+
+```sh
+pnpm build
+pnpm start
+```
+
+The frontend builds its API base URL from:
+
+- `NEXT_PUBLIC_API_URL`, when set.
+- Otherwise the browser host plus `NEXT_PUBLIC_API_PORT`, defaulting to `5001`.
+
+### Docker Setup
+
+The Docker setup lives in `CallAnalysisTool/docker-compose.yml` and uses four services: `frontend`, `backend`, `ollama`, and `whisper`.
+
+For Docker and offline deployment instructions, see [DOCKER_README.md](DOCKER_README.md).
+
+Quick online build:
+
+```sh
+cd CallAnalysisTool
+docker compose build
+docker compose up
+```
 
 ---
 
 ## Key Features
 
-### Audio Transcription Pipeline
-
-The system can process raw audio files (zip archives containing WAV files and CDR metadata) through a complete transcription pipeline:
-
-1. **Zip Processing**: Extracts audio files and CDR metadata, renames files based on call date, time, and dispatcher name
-2. **Speech-to-Text**: Transcribes audio using WhisperX (local, CPU-based) with word-level timestamps
-3. **Speaker Separation**: Automatically identifies and labels dispatcher vs. caller segments using MFCC acoustic features and linguistic analysis
-4. **Output**: Produces structured JSON transcripts ready for grading
-
-**Pipeline Flow:**
-
-```
-Zip file → Extract & Rename → Transcribe (WhisperX) → Speaker Separation → JSON Transcript
-```
-
-### Protocol Question Coverage Checker
-
-Given a 911 call transcript and a set of required protocol questions for a selected nature code, the system checks which questions were asked, which were missed, and provides a simple coverage score. The non‑AI grader is deterministic and traceable; the AI grader expands recall for paraphrases.
-
-**Example**
-
-- Transcript: "911 what's the address of the emergency? Are there any injuries?"
-- Required:
-  1. "What is the address of the emergency?"
-  2. "Is anyone injured?"
-  3. "Are you in a safe location?"
-- Output: `asked = [1,2]`, `missed = [3]`, `coverage = 0.67`
+- Dispatcher dashboard with station grade, dispatcher grades, date filtering, searching, and sorting.
+- Record review pages with call navigation, audio playback, synchronized transcript display, and grade details.
+- Upload workflow for `.zip` call packages and `.json` transcripts.
+- Full audio pipeline for ZIP uploads: CDR parsing, WhisperX transcription, speaker separation, nature-code detection, AI grading, and record storage.
+- JSON transcript grading without audio transcription when a pre-transcribed call is available.
+- Grade editing, transcript editing, nature-code switching, question add/delete, and recalculated scores.
+- Regrade action that reruns AI grading against the current transcript and selected nature code.
+- Printable call reports.
+- Local model execution through WhisperX, pyannote, and Ollama.
 
 ---
 
 ## Usage
 
-### Audio Transcription Workflow
+### Upload and Grade a New Call
 
-1. **Upload Audio**: Upload a zip file containing:
-   - WAV audio file (911 call recording)
-   - CDR text file (call detail record with metadata)
-   - **IMPORTANT:** Make sure the files are zipped as is, i.e., do not put them into another folder before zipping
-2. **Transcription**: The pipeline automatically:
-   - Extracts and processes the zip file
-   - Transcribes audio to text using WhisperX
-   - Separates dispatcher and caller segments
-   - Saves structured JSON transcript to `backend/output/` directory
-3. **Grading**: Use the transcript JSON for protocol question analysis
+1. Start the backend and frontend.
+2. Open `http://localhost:3000/evaluate`.
+3. Upload one or more `.zip` or `.json` files.
+4. Wait for processing to finish.
+5. The frontend redirects to the first processed record.
 
-### Grading Workflow
+ZIP upload requirements:
 
-1. Upload EMS call transcripts (JSON format) through the frontend.
-2. The frontend calls the backend API.
-3. The backend compares transcripts against the EMS protocol CSV (non‑AI) and/or embeddings (AI).
-4. Results are returned and displayed on the frontend.
+- The ZIP should contain one `.wav` file.
+- The ZIP should contain one `.txt` CDR file.
+- The WAV and CDR should be at the top level of the ZIP, not nested inside another folder.
+
+JSON transcript requirements:
+
+- The JSON body should contain a `segments` array.
+- `date`, `time`, and `agent_name` are used when present.
+- If `agent_name` is missing, the backend falls back to the first value in `speakers`.
+
+### Review Existing Records
+
+1. Open `http://localhost:3000/records`.
+2. Search or filter dispatchers by date range.
+3. Select a dispatcher.
+4. Review individual calls, audio, transcript segments, grade reasoning, and nature-code details.
+
+### Edit and Regrade
+
+On a record page:
+
+- Use `Edit Transcript` to change segment speaker labels or text.
+- Use `Edit Grades` to change grade codes, question labels, detected nature code, or question set.
+- Save grade edits to recalculate grade percentage and summary counts.
+- Use `Regrade` to rerun AI grading using the current transcript and nature code.
+
+If a nature-code change affects the stored folder/file naming, the backend renames the record folder and related files.
 
 ---
 
 ## How it Works
 
-### Transcription Pipeline
+### Upload Pipeline
 
-1. **Zip Processing** (`zip_processor.py`):
+The main upload flow is implemented in `backend/api/routes/upload.py`.
 
-   - Extracts zip archives containing audio files and CDR metadata
-   - Parses CDR text to extract call date, time, and dispatcher name
-   - Renames files and folders using format: `YYYYMMDD_HHMMSS_dispatchername`
-2. **Audio Transcription** (`whisperx_transcriber.py`):
+```text
+ZIP upload
+  -> create temp folder
+  -> extract ZIP
+  -> find .txt CDR and .wav audio
+  -> parse date, time, and dispatcher from CDR
+  -> transcribe WAV with WhisperX
+  -> run speaker separation
+  -> detect nature code
+  -> grade transcript
+  -> move CDR, audio, transcript, and grades into backend/output
 
-   - Uses WhisperX (large-v3 model) for speech-to-text conversion
-   - Generates word-level timestamps for precise segment alignment
-   - Outputs structured JSON with segments, timestamps, and metadata
-3. **Speaker Separation** (`speaker_separation.py`):
+JSON upload
+  -> create temp folder
+  -> save request body as transcript.json
+  -> detect nature code
+  -> grade transcript
+  -> move transcript and grades into backend/output
+```
 
-   - Extracts MFCC (Mel-frequency cepstral coefficients) acoustic features
-   - Groups segments by acoustic similarity (two-speaker diarization)
-   - Uses linguistic cues (question marks, sentence length) to identify dispatcher vs. caller
-   - Produces final JSON with speaker labels for each segment
+Final records are stored as:
+
+```text
+backend/output/{dispatcher}/{YYYYMMDD}_{HHMMSS}_{nature_code}/
+  {dispatcher}_{YYYYMMDD}_{HHMMSS}_{nature_code}_cdr.txt
+  {dispatcher}_{YYYYMMDD}_{HHMMSS}_{nature_code}_audio.wav
+  {dispatcher}_{YYYYMMDD}_{HHMMSS}_{nature_code}_transcript.json
+  {dispatcher}_{YYYYMMDD}_{HHMMSS}_{nature_code}_grades.json
+```
+
+JSON-only uploads do not create CDR or audio files.
+
+### Transcription and Speaker Separation
+
+- `whisperx_transcriber.py` wraps WhisperX model loading and transcription.
+- `speaker_separation.py` aligns the transcript, runs diarization, assigns word speakers, then labels the likely dispatcher based on question-heavy speech.
+- `text_handler.py` converts transcript JSON into prompt text and extracts CDR metadata.
+
+### Nature-Code Detection
+
+`nature_codes.py` loads `nature_codes_master.json`, formats available nature codes into a prompt, and asks Ollama to return a valid bracketed nature-code ID. The detector retries invalid responses and falls back to Case Entry if it cannot get a valid nature code.
 
 ### Grading System
 
-* The Excel grading sheet provided by NPD is loaded as the reference for grading criteria (non‑AI).
-* Parser: transcripts (from transcription pipeline or external sources) are normalized into a CallRecord schema (speaker tags, timestamps, confidence, audio quality).
-* Rule‑based grader: token/intent patterns detect whether each protocol question was asked.
-* AI grader: local LLM + embeddings (FAISS) improves paraphrase/intent detection; both graders share the same output schema.
-* Frontend: displays asked/missed, rationales, and basic coverage/score.
+`ai_grader.py` grades one protocol question at a time using a persistent Ollama chat.
 
----
+The grading question set is loaded from `nature_codes_master.json`:
 
-## Branches & Modules
+- Case Entry questions are included first.
+- The detected or selected nature-code questions are appended.
+- Question metadata such as parent question, allowed alternatives, condition, scenario, clarification rules, macros, and skipped-AI flags can affect the prompt or grading behavior.
 
-- **main** — stable trunk and project README; consolidates modules as they land.
-- **transcript-parsing** — parser and schema for CallRecord; tests for normalization.
-- **ai-model** — AI grading via Ollama + embeddings/FAISS; tests and configs for local inference.
-- **unit-testing** — shared test harness and fixtures (parser, rule grader, endpoint contract, AI smoke).
+Each question receives:
 
-Feature branches are merged into `main` via PRs as they stabilize.
+- `code`
+- `status`
+- `label`
+- `reasoning`
+
+The final percentage excludes `Not Applicable` and `Recorded Correctly`, gives full credit for `Asked Correctly` and `Obvious`, partial credit for `Not As Scripted`, and no credit for `Not Asked` or `Asked Incorrectly`.
+
+### Grade Codes
+
+| Code | Meaning |
+| ---- | ------- |
+| `1` | Asked Correctly |
+| `2` | Not Asked |
+| `3` | Asked Incorrectly |
+| `4` | Not As Scripted |
+| `5` | Not Applicable |
+| `6` | Obvious |
+| `RC` | Recorded Correctly |
 
 ---
 
 ## API Endpoints
 
-### Transcription Pipeline (Flask)
+All current backend routes are registered under `/api`.
 
-- `GET /api/home` → Health check for transcription service
-- `POST /api/transcribe` → Process zip file through full transcription pipeline
-  - Request: `multipart/form-data` with `file` field (zip archive)
-  - Response: JSON with transcription file path and metadata
-- `GET /api/transcriptions` → List all available transcriptions
-- `GET /api/transcriptions/<filename>` → Get specific transcription by filename
-- `GET /api/output/<path>` → Serve audio files from output directory
-
-### Grading Endpoints
-
-#### Health Check
-
-```http
-GET /api/health
-```
-
-**Response:**
-
-```json
-{
-  "status": "healthy",
-  "service": "EMS Call Analysis API",
-  "version": "1.0.0"
-}
-```
-
-#### Grade Transcript (AI Grading)
-
-```http
-POST /api/grade
-POST /api/grade/ai  (alias)
-```
-
-**Uses:** AI grader with Ollama (llama3.1:8b model)
-
-**Request Body** (JSON):
-
-```json
-{
-  "language": "en",
-  "segments": [
-    {
-      "start": 0.0,
-      "end": 5.0,
-      "text": "Norman 911, what is the address of the emergency?",
-      "speaker": "SPEAKER_01",
-      "confidence": -0.29,
-      "audio_quality": 0.737
-    }
-  ]
-}
-```
-
-**Query Parameters:**
-
-- `?show_evidence=true` - Include evidence/matching segments in response
-
-**Response:**
-
-```json
-{
-  "grader_type": "ai",
-  "timestamp": "2025-10-31T12:34:56Z",
-  "grades": {
-    "1": {
-      "code": "1",
-      "label": "What's the location of the emergency?",
-      "status": "Asked Correctly"
-    }
-  },
-  "metadata": {
-    "language": "en",
-    "segment_count": 5,
-    "grader_version": "1.0.0",
-    "model": "llama3.1:8b"
-  }
-}
-```
-
-#### Upload and Grade File
+### Upload
 
 ```http
 POST /api/upload
 ```
 
-Upload a `.json` transcript file and get grading results with automatic nature code detection.
+Accepted inputs:
 
-**Request:** `multipart/form-data` with `file` field
+- `multipart/form-data` with `file` containing a `.zip`.
+- JSON request body containing a transcript.
 
-**Response:**
+Response:
 
 ```json
 {
-  "filename": "test_transcript.json",
-  "grader_type": "ai",
-  "grade_percentage": 56.2,
-  "detected_nature_code": "Case Entry",
-  "total_questions": 17,
-  "questions_asked_correctly": 4,
-  "questions_missed": 13,
-  "grades": { ... },
-  "metadata": { ... }
+  "outputDestination": "output/Dispatcher/20260326_093424_Falls",
+  "dispatcherName": "Dispatcher",
+  "grades": {
+    "grader_type": "ai",
+    "grade_percentage": 82.4,
+    "detected_nature_code": {
+      "id": "17",
+      "name": "Falls"
+    },
+    "nature_code_reasoning": "...",
+    "total_questions": 27,
+    "case_entry_questions": 17,
+    "nature_code_questions": 10,
+    "questions_asked_correctly": 20,
+    "questions_missed": 7,
+    "timestamp": "2026-05-04T00:00:00Z",
+    "grades": {}
+  }
 }
 ```
 
-#### Legacy Endpoints
+### Dispatchers
 
-- `POST /analyze` → Legacy asked/missed/coverage based on CSV rules (S1)
-- `POST /grade/rule` → Non‑AI grading (deterministic, CSV‑driven) (S2)
-- `POST /grade/llm` → AI grading (local model; same response shape as `/grade/rule`) (S2)
-
-#### Grading Code Reference
-
-| Code | Meaning            |
-| ---- | ------------------ |
-| 1    | Asked Correctly    |
-| 2    | Not Asked          |
-| 3    | Asked Incorrectly  |
-| 4    | Not As Scripted    |
-| 5    | N/A                |
-| 6    | Obvious            |
-| RC   | Recorded Correctly |
-
----
-
-## Testing
-
-### Automated Tests
-
-```bash
-# Make sure you're in the backend directory
-cd CallAnalysisTool/backend
-export PYTHONPATH=.
-
-# Parser tests
-pytest -q tests/parser
-
-# Rule grader tests
-pytest -q tests/rule_grader
-
-# Endpoint contract tests (Flask server running)
-pytest -q tests/endpoints
-
-# AI grader smoke/contract (if Ollama configured)
-pytest -q tests/llm_grader -k "smoke or contract"
+```http
+GET /api/dispatchers
+GET /api/dispatchers?start_date=20260301&end_date=20260331
 ```
 
-Focus areas: parser normalization edge cases, synonyms/reordering tolerance in the rule‑based grader, response contract shape, and LLM smoke where configured.
+Returns dispatcher summaries and station grade.
 
-### Manual API Testing
-
-**Health Check:**
-
-```bash
-curl http://localhost:5001/api/health
+```http
+GET /api/dispatchers/{dispatcher}
+GET /api/dispatchers/{dispatcher}?start_date=20260301&end_date=20260331
 ```
 
-**Grade a transcript (JSON body):**
+Returns record folder names for a dispatcher.
 
-```bash
-curl -X POST http://localhost:5001/api/grade \
-  -H "Content-Type: application/json" \
-  -d @CallAnalysisTool/backend/tests/test_transcript.json
+```http
+GET /api/dispatchers/{dispatcher}/{record_name}
 ```
 
-**Test file upload:**
+Returns the files available for a record, grouped into audio, CDR, transcript, grade, and other files.
 
-```bash
-curl -X POST http://localhost:5001/api/upload \
-  -F "file=@CallAnalysisTool/backend/tests/test_transcript.json"
+### Files
+
+```http
+GET /api/files/{filename}
 ```
 
-**Windows (PowerShell):**
+Returns JSON, plain text, or audio content for a stored record file. File names follow:
 
-```powershell
-# Health check
-curl http://localhost:5001/api/health
-
-# Grade a transcript
-curl -X POST http://localhost:5001/api/grade `
-  -H "Content-Type: application/json" `
-  -d "@CallAnalysisTool/backend/tests/test_transcript.json"
-
-# Test file upload
-curl -X POST http://localhost:5001/api/upload `
-  -F "file=@CallAnalysisTool/backend/tests/test_transcript.json"
+```text
+{dispatcher}_{YYYYMMDD}_{HHMMSS}_{nature_code}_{description}.{ext}
 ```
 
-### Testing with Postman/Insomnia
-
-1. Import the test transcript: `CallAnalysisTool/backend/tests/test_transcript.json`
-2. POST to `http://localhost:5001/api/grade`
-3. Set `Content-Type: application/json`
-4. Paste transcript in body
-
-**Or test file upload endpoint:**
-
-1. POST to `http://localhost:5001/api/upload`
-2. Set `Content-Type: multipart/form-data`
-3. Add file field with `tests/test_transcript.json`
-
----
-
-## Branch-Specific Demos
-
-These steps match the files that exist in each branch snapshot in this repo.
-
-### ai-model
-
-What it shows
-
-- `CallAnalysisTool/backend/test_case.py` runs a single transcript through the parser → rule grader (and AI if configured).
-- Group B JSON sample and text fixtures are under `tests/sample_data/`.
-
-Run once (dependencies)
-
-```bash
-cd CallAnalysisTool/backend
-python -m venv venv
-# mac/linux
-source venv/bin/activate
-# windows
-# .\venv\Scripts\activate
-pip install -r requirements.txt
-cd ../..
+```http
+PUT /api/files/{filename}
 ```
 
-Quick demo (positive text)
+Updates supported JSON files:
 
-```bash
-python CallAnalysisTool/backend/test_case.py \
-  --transcript tests/sample_data/transcript_positive.txt \
-  --required tests/sample_data/required_questions.json \
-  --nature "BREATHING_PROBLEMS" \
-  --mode text
+- `{...}_transcript.json`
+- `{...}_grades.json`
+
+Grade updates recalculate score fields. If a nature-code edit changes the record's nature-code name, the backend can rename the record folder and files.
+
+```http
+GET /api/files/nature-codes
 ```
 
-Demo with real JSON transcript
+Returns nature-code IDs and names.
 
-```bash
-python CallAnalysisTool/backend/test_case.py \
-  --transcript "CallAnalysisTool/backend/transcriptions/2025_00015813_Falls_Shattell_transcription.json" \
-  --required tests/sample_data/required_questions.json \
-  --nature "FALLS" \
-  --mode json --pretty
+```http
+GET /api/files/nature-codes/{nature_code_id}
 ```
 
----
+Returns a blank grade scaffold for the selected nature code.
 
-### transcript-parsing
+### Regrade
 
-What it shows
-
-- Same single‑case runner at `CallAnalysisTool/backend/test_case.py`.
-- Emphasize normalization into CallRecord: run with text and with Group B JSON.
-
-Commands
-
-```bash
-# dependencies once (if not already done)
-cd CallAnalysisTool/backend
-python -m venv venv && source venv/bin/activate && pip install -r requirements.txt
-cd ../..
-
-# text fixture
-python CallAnalysisTool/backend/test_case.py \
-  --transcript tests/sample_data/transcript_positive.txt \
-  --required tests/sample_data/required_questions.json \
-  --nature "BREATHING_PROBLEMS" \
-  --mode text
-
-# JSON fixture
-python CallAnalysisTool/backend/test_case.py \
-  --transcript "CallAnalysisTool/backend/transcriptions/2025_00015813_Falls_Shattell_transcription.json" \
-  --required tests/sample_data/required_questions.json \
-  --nature "FALLS" \
-  --mode json --pretty
+```http
+POST /api/regrade/{dispatcher}/{record_identifier}
 ```
 
----
+Re-runs AI grading for an existing record using its current transcript and stored nature code.
 
-### unit-testing
+`record_identifier` is:
 
-What it shows
-
-- Simple non‑AI test harness for Case Entry (Q1 → 2a) over a sample transcript.
-
-Commands
-
-```bash
-cd unitTests
-python3 test_case.py transcript_call.txt --show-evidence
+```text
+{YYYYMMDD}_{HHMMSS}_{nature_code}
 ```
 
-Optional (use custom config files)
-
-```bash
-cd unitTests
-python3 test_case.py transcript_call.txt --labels rubric.json --synonyms synonyms.json --show-evidence
-```
-
-Expected
-
-- Prints asked/missed codes and short evidence snippets for the provided transcript.
-
----
+There is no dedicated `/api/health` route at the moment. For a simple backend smoke check, use `GET /api/dispatchers`.
 
 ---
 
 ## Configuration
 
-### CORS
+### Local Environment
 
-The API allows requests from:
+When running the backend locally from `CallAnalysisTool/backend`, set:
 
-- `http://localhost:3000` (Next.js)
-- `http://localhost:5173` (Vite)
-- `http://localhost:5174` (Vite alternate)
-
-To add more origins, edit `CallAnalysisTool/backend/api/app.py`:
-
-```python
-CORS(app, resources={
-    r"/api/*": {
-        "origins": ["http://your-frontend-url.com"]
-    }
-})
+```sh
+export PYTHONPATH=.
+export TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=true
+export OLLAMA_HOST=http://localhost:11434
+export HF_TOKEN=your_huggingface_token
 ```
 
-### Environment Variables
+`start_api.sh` loads `../.env` if it exists. That file is primarily used by Docker, so check values such as `DOCKER_CONTAINER`, `OLLAMA_HOST_BACKEND`, and offline flags if local startup behaves differently than expected.
 
-- `PYTHONPATH` - Should be set to `.` when running from the backend directory (see Troubleshooting for setup)
-- `OLLAMA_HOST` - Defaults to `http://localhost:11434` (Ollama server)
+### Docker Environment
+
+Docker variables are defined in `CallAnalysisTool/.env`.
+
+Common values:
+
+```text
+NODE_ENV=production
+PORT_FRONTEND=3000
+NEXT_PUBLIC_API_PORT=5001
+NEXT_PUBLIC_API_URL=
+
+OLLAMA_HOST_OLLAMA=0.0.0.0
+OLLAMA_MODEL=llama3.1:8b
+PORT_OLLAMA=11434
+
+HF_HOME_PRELOAD=/preload_cache
+TRANSFORMERS_CACHE_PRELOAD=/preload_cache
+SENTENCE_TRANSFORMERS_HOME_PRELOAD=/preload_cache
+HF_HOME=/root/.cache/huggingface
+TRANSFORMERS_CACHE=/root/.cache/huggingface
+SENTENCE_TRANSFORMERS_HOME=/root/.cache/huggingface
+TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=true
+HF_TOKEN=...
+
+OLLAMA_HOST_BACKEND=http://ollama:11434
+FLASK_ENV=production
+DOCKER_CONTAINER=true
+TRANSFORMERS_OFFLINE=0
+HF_HUB_OFFLINE=0
+NLTK_DATA=/usr/local/share/nltk_data
+PORT_BACKEND=5001
+```
+
+For offline Docker deployment, set:
+
+```text
+TRANSFORMERS_OFFLINE=1
+HF_HUB_OFFLINE=1
+```
+
+### CORS
+
+The Flask app currently allows all origins for all routes. CORS is configured in `CallAnalysisTool/backend/api/app.py`.
+
+---
+
+## Testing
+
+Current verification is mostly manual.
+
+Backend syntax check:
+
+```sh
+cd CallAnalysisTool/backend
+python -m compileall -q api
+```
+
+Frontend lint:
+
+```sh
+cd CallAnalysisTool/frontend
+pnpm lint
+```
+
+The `backend/tests/` folder contains a sample transcript and a manual shell script, but `test_manual.sh` still references older endpoints and should be updated before relying on it for endpoint verification.
 
 ---
 
 ## Troubleshooting
 
-### Import Errors
+### Backend Import Errors
 
-If you get `ModuleNotFoundError`:
+Run the backend from `CallAnalysisTool/backend` and set `PYTHONPATH=.`
 
-```bash
-# Make sure you're in the backend directory
+```sh
 cd CallAnalysisTool/backend
-
-# Set PYTHONPATH
 export PYTHONPATH=.
-# Windows PowerShell:
-$env:PYTHONPATH = "."
+python api/app.py
 ```
 
 ### Port Already in Use
 
-If port 5001 is busy:
+Backend default: `5001`
 
-**Mac/Linux:**
+Frontend default: `3000`
 
-```bash
-# Kill the process
-lsof -ti:5001 | xargs kill
+Ollama default: `11434`
 
-# Or change the port in api/app.py
-app.run(host='0.0.0.0', port=5001, debug=True)
-```
-
-**Windows (PowerShell):**
-
-```powershell
-# Find process using port 5001
-netstat -ano | findstr :5001
-# Kill using PID from above command
-taskkill /PID <PID> /F
-```
-
-### CORS Errors
-
-If frontend can't connect:
-
-1. Check the browser console for specific error
-2. Add your frontend URL to CORS origins in `api/app.py`
-3. Restart the server
+Change `PORT_BACKEND`, `PORT_FRONTEND`, or `PORT_OLLAMA` in `CallAnalysisTool/.env` for Docker. For local Flask runs, set `PORT` before starting `api/app.py`.
 
 ### Ollama Connection Failed
 
-If you get "Ollama connection failed" errors:
+Check:
 
-1. Ensure Ollama is installed: `ollama --version`
-2. Start Ollama server: `ollama serve`
-3. Verify model is downloaded: `ollama list` (should show `llama3.1:8b`)
-4. If model missing: `ollama pull llama3.1:8b`
-5. Test connection: `curl http://localhost:11434/api/tags`
+```sh
+ollama --version
+ollama serve
+ollama list
+ollama pull llama3.1:8b
+curl http://localhost:11434/api/tags
+```
 
-### WhisperX Model Download Issues
+For Docker, the backend uses `OLLAMA_HOST_BACKEND=http://ollama:11434`.
 
-If WhisperX model fails to download:
+### WhisperX or pyannote Download Issues
 
-1. Check internet connection
-2. Model is large (~3GB) - ensure sufficient disk space
-3. First download may take 10-15 minutes
-4. Model is cached after first download
+- Confirm internet access for first local model download.
+- Confirm `HF_TOKEN` is set if pyannote needs to download diarization models.
+- Confirm the Hugging Face account has accepted the required pyannote model terms.
+- Confirm there is enough disk space for model caches.
+
+### ffmpeg Not Found
+
+Install ffmpeg and make sure it is available in the same shell that starts the backend.
+
+Examples:
+
+```sh
+brew install ffmpeg
+sudo apt-get install ffmpeg
+```
+
+On Windows, install ffmpeg with your preferred package manager and restart the terminal so `ffmpeg` is on `PATH`.
+
+### Frontend Cannot Connect to Backend
+
+Check the backend directly:
+
+```sh
+curl http://localhost:5001/api/dispatchers
+```
+
+If the frontend is hosted somewhere other than the backend host, set `NEXT_PUBLIC_API_URL` before building or starting the frontend.
+
+### Torch Safe Loading Errors
+
+Set:
+
+```sh
+export TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=true
+```
 
 ---
 
 ## Notes
 
-### Features
+### Privacy and Security
 
-- **AI-based grading** using Ollama (llama3.1:8b) for natural language understanding
-- **Nature code detection** (keyword + text embeddings) to automatically identify call type
-- **Dynamic question loading** from EMSQA.csv (296 protocol questions)
-- **Speaker separation** using MFCC acoustic features and linguistic analysis
-- **Word-level timestamps** for precise transcript alignment
-- **CORS-enabled** for frontend integration
-- **Local processing** (no external API calls, privacy-compliant)
-- **Accepts Group B's JSON transcript format** for seamless integration
+- Treat all call audio, transcripts, CDRs, and grades as sensitive data.
+- The intended workflow uses local transcription and local Ollama inference.
+- Stored outputs remain under `CallAnalysisTool/backend/output/` unless manually moved or exported.
+- Be careful when committing or sharing generated output files.
 
-### Transcription Pipeline Technical Details
+### Current Limitations
 
-- **Model**: WhisperX large-v3 (CPU-only, int8 quantization for efficiency)
-- **Speaker Separation**: Uses MFCC features and linguistic heuristics (question detection, sentence length)
-- **Output Format**: JSON with segments containing speaker labels, timestamps, and text
-- **Storage**: All transcriptions saved in `backend/output/` directory, organized by call date/time/dispatcher
-
-### Future AI Integration
-
-- Add a basic AI grading module to test against Norman PD demo data (local only).
-- Expand natural language handling while keeping outputs explainable.
-- Maintain on‑premise, privacy‑aware deployment (no cloud for PHI).
-
-### Privacy & Security
-
-- Treat all 911 data as sensitive. Redact as needed. Use local inference only.
-- All processing happens locally:
-  - Transcription: WhisperX on CPU (no cloud services)
-  - AI grading: Ollama (no cloud services)
-  - Storage: Audio files and transcripts stored in local `backend/output/` directory
-- No PHI (Protected Health Information) leaves the local environment.
+- AI grading quality depends on transcript quality, speaker labels, nature-code selection, and local model responses.
+- The frontend protocol reference is static UI data and may not perfectly mirror `nature_codes_master.json`.
+- The manual backend test script still targets older endpoints.
+- There is no dedicated backend health endpoint.
 
 ---
 
 ## Team Members (Spring 2026)
 
-| Name            | Role                                      | Contact                    |
-| --------------- | ----------------------------------------- | -------------------------- |
-| Luke Chey       | Product Owner                             | lvchey@ou.edu              |
-| Brayden Garner  | SM1                                       | bgarner@ou.edu             |
-| Keyera Lastrap  | SM2                                       | keyera.l.lastrap-1@ou.edu  |
-| Michael Crabb   | SM3                                       | michael.m.crabb-1@ou.edu   |
-| Ethan Gulley    | SM4                                       | ethangulley@ou.edu         |
+| Name | Role | Contact |
+| ---- | ---- | ------- |
+| Luke Chey | Product Owner | lvchey@ou.edu |
+| Brayden Garner | SM1 | bgarner@ou.edu |
+| Keyera Lastrap | SM2 | keyera.l.lastrap-1@ou.edu |
+| Michael Crabb | SM3 | michael.m.crabb-1@ou.edu |
+| Ethan Gulley | SM4 | ethangulley@ou.edu |
