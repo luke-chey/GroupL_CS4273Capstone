@@ -1,5 +1,5 @@
 # Flask-only Dockerfile (backend service)
-FROM python:3.13.7
+FROM python:3.12
 
 # Install minimal system deps for audio I/O if needed by the backend
 RUN apt-get update && apt-get install -y \

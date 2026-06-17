@@ -1,5 +1,5 @@
 # Whisper/WhisperX pre-cache Dockerfile
-FROM python:3.13.7
+FROM python:3.12
 
 # Install system deps for audio processing
 RUN apt-get update && apt-get install -y \
@@ -47,15 +47,20 @@ if not token:
 
 Pipeline.from_pretrained(
     "pyannote/speaker-diarization-3.1",
-    use_auth_token=token
+    token=token
 )
 EOF
 
 # Sentence transformer
+# Sentence transformer cache download without importing sentence_transformers
 RUN python - <<EOF
-from sentence_transformers import SentenceTransformer
-model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
-model.save('/preload_cache/all-MiniLM-L6-v2')
+from huggingface_hub import snapshot_download
+
+snapshot_download(
+    repo_id="sentence-transformers/all-MiniLM-L6-v2",
+    local_dir="/preload_cache/all-MiniLM-L6-v2",
+    local_dir_use_symlinks=False
+)
 EOF
 
 # Copy an entrypoint that will initialize named volumes from the baked preload cache
